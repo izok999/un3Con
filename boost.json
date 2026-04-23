@@ -1,0 +1,20 @@
+{
+    "agents": [
+        "copilot"
+    ],
+    "guidelines": true,
+    "mcp": true,
+    "nightwatch_mcp": false,
+    "packages": [
+        "spatie/laravel-permission"
+    ],
+    "sail": true,
+    "skills": [
+        "laravel-best-practices",
+        "socialite-development",
+        "livewire-development",
+        "volt-development",
+        "tailwindcss-development",
+        "laravel-permission-development"
+    ]
+}

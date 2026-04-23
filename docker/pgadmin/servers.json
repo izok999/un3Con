@@ -1,0 +1,22 @@
+{
+    "Servers": {
+        "1": {
+            "Name": "SEFUNE Local",
+            "Group": "Locales",
+            "Host": "pgsql",
+            "Port": 5432,
+            "MaintenanceDB": "laravel",
+            "Username": "sail",
+            "SSLMode": "prefer"
+        },
+        "2": {
+            "Name": "UNE Base Consulta",
+            "Group": "Externas",
+            "Host": "10.10.254.252",
+            "Port": 5432,
+            "MaintenanceDB": "une_base",
+            "Username": "usr_alu_web",
+            "SSLMode": "prefer"
+        }
+    }
+}

@@ -1,0 +1,361 @@
+/* ============================================
+   1. IMPORTAR TAILWINDCSS 4
+   ============================================ */
+@import "tailwindcss";
+
+/* ============================================
+   2. PLUGINS
+   ============================================ */
+@plugin "daisyui" {
+    themes: uneTheme --default, uneThemeDark;
+}
+
+/* ============================================
+   3. SOURCES (para que TW escanee las clases)
+   ============================================ */
+/* Componentes MaryUI */
+@source "../../vendor/robsontenorio/mary/src/View/Components/**/*.php";
+
+/* Vistas de Laravel (pagination, etc.) */
+@source "../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php";
+
+/* ============================================
+   4. TIPOGRAFÍA
+   ============================================ */
+@theme {
+    --font-sans: 'Figtree', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ============================================
+   5. TEMA CLARO — uneTheme
+   ============================================ */
+@layer base {
+    [data-theme="uneTheme"] {
+        color-scheme: light;
+        --color-primary: #6A9149;
+        --color-primary-content: #ffffff;
+        --color-secondary: #CC9933;
+        --color-secondary-content: #ffffff;
+        --color-accent: #F6CD1B;
+        --color-accent-content: #000000;
+        --color-neutral: #2a2a2a;
+        --color-neutral-content: #ffffff;
+        --color-base-100: #ffffff;
+        --color-base-200: #f3f4f6;
+        --color-base-300: #e5e7eb;
+        --color-base-content: #1f2937;
+        --color-info: #6A9149;
+        --color-info-content: #ffffff;
+        --color-success: #6A9149;
+        --color-success-content: #ffffff;
+        --color-warning: #CC9933;
+        --color-warning-content: #ffffff;
+        --color-error: #af3030;
+        --color-error-content: #ffffff;
+        /* Radios globales */
+        --rounded-box: 1.5rem;
+        --rounded-btn: 0.75rem;
+        --rounded-badge: 1.5rem;
+        --rounded-selector: 0.5rem;
+    }
+}
+
+/* ============================================
+   6. TEMA OSCURO — uneThemeDark
+   ============================================ */
+@layer base {
+    [data-theme="uneThemeDark"] {
+        color-scheme: dark;
+        --color-primary: #7FB356;
+        --color-primary-content: #ffffff;
+        --color-secondary: #D4A847;
+        --color-secondary-content: #000000;
+        --color-accent: #F6CD1B;
+        --color-accent-content: #000000;
+        --color-neutral: #1a1a2e;
+        --color-neutral-content: #e2e8f0;
+        --color-base-100: #1e2028;
+        --color-base-200: #16181f;
+        --color-base-300: #2a2d3a;
+        --color-base-content: #e5e7eb;
+        --color-info: #7FB356;
+        --color-info-content: #ffffff;
+        --color-success: #7FB356;
+        --color-success-content: #ffffff;
+        --color-warning: #D4A847;
+        --color-warning-content: #000000;
+        --color-error: #d44444;
+        --color-error-content: #ffffff;
+        /* Radios globales */
+        --rounded-box: 1.5rem;
+        --rounded-btn: 0.75rem;
+        --rounded-badge: 1.5rem;
+        --rounded-selector: 0.5rem;
+    }
+}
+
+/* ============================================
+   7. FONDO CON GRADIENTE + PATRÓN DE PUNTOS
+   ============================================ */
+@layer utilities {
+    .bg-app-pattern {
+        background-color: #e8ede4;
+        background-image:
+            url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='1' cy='1' r='1.2' fill='%236A9149' fill-opacity='0.18'/%3E%3C/svg%3E");
+    }
+
+    [data-theme="uneThemeDark"] .bg-app-pattern {
+        background-color: #16181f;
+        background-image:
+            url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='1' cy='1' r='1' fill='%23ffffff' fill-opacity='0.04'/%3E%3C/svg%3E"),
+            linear-gradient(135deg, #1a2e12 0%, #1e2814 45%, #2a1a05 100%);
+    }
+}
+
+/* ============================================
+   8. GLASS — UTILIDADES
+   ============================================ */
+@layer utilities {
+
+    /* Tarjeta glass: blur fuerte + fondo translúcido + hover elevation */
+    .glass-card {
+        background-color: rgb(255 255 255 / 0.75) !important;
+        -webkit-backdrop-filter: blur(24px);
+        backdrop-filter: blur(24px);
+        border: 1px solid rgb(255 255 255 / 0.20) !important;
+        border-radius: 1.5rem !important;
+        box-shadow: 0 8px 32px rgb(0 0 0 / 0.15);
+        transition: transform 0.25s ease, box-shadow 0.25s ease;
+    }
+
+    .glass-card:hover {
+        transform: translateY(-3px) scale(1.01);
+        box-shadow: 0 20px 48px rgb(0 0 0 / 0.20);
+    }
+
+    /* Superficie glass sin hover: dropdowns, popovers */
+    .glass-surface {
+        background-color: rgb(255 255 255 / 0.80) !important;
+        -webkit-backdrop-filter: blur(20px);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgb(255 255 255 / 0.30) !important;
+        box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+    }
+
+    /* Sidebar glass */
+    .glass-sidebar {
+        background-color: rgb(255 255 255 / 0.40) !important;
+        -webkit-backdrop-filter: blur(24px);
+        backdrop-filter: blur(24px);
+        border: 1px solid rgb(255 255 255 / 0.20) !important;
+        border-radius: 0 1.75rem 1.75rem 0 !important;
+        box-shadow: 0 18px 40px rgb(0 0 0 / 0.18);
+        overflow: hidden;
+    }
+
+    /* Topbar / navbar glass */
+    .glass-navbar {
+        background-color: rgb(255 255 255 / 0.70) !important;
+        -webkit-backdrop-filter: blur(20px);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgb(255 255 255 / 0.30);
+        border-radius: 1.75rem;
+        box-shadow: 0 10px 28px rgb(0 0 0 / 0.10);
+        overflow: visible;
+        transition: background-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .glass-navbar .dropdown-content {
+        z-index: 70;
+    }
+
+    .glass-navbar.scrolled {
+        background-color: rgb(255 255 255 / 0.50) !important;
+        box-shadow: 0 4px 24px rgb(0 0 0 / 0.12);
+    }
+
+    /* Sidebar principal: por encima del topbar y del contenido cuando se abre */
+    #main-drawer ~ .drawer-side {
+        z-index: 80 !important;
+    }
+
+    #main-drawer ~ .drawer-side .drawer-overlay {
+        background-color: rgb(15 23 42 / 0.18);
+        -webkit-backdrop-filter: blur(4px);
+        backdrop-filter: blur(4px);
+    }
+
+    #main-drawer ~ .drawer-side > .glass-sidebar {
+        position: relative;
+        z-index: 81;
+    }
+
+    /* Botones: mismo lenguaje redondeado del tema */
+    .btn:not(.btn-circle):not(.btn-square) {
+        border-radius: 1.15rem !important;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease, border-color 0.2s ease;
+    }
+
+    .btn:is(.btn-primary, .btn-secondary, .btn-accent, .btn-error, .btn-info, .btn-success, .btn-warning, .btn-neutral, .btn-outline):not(.btn-circle):not(.btn-square) {
+        box-shadow: 0 4px 10px rgb(0 0 0 / 0.08);
+    }
+
+    .btn:is(.btn-primary, .btn-secondary, .btn-accent, .btn-error, .btn-info, .btn-success, .btn-warning, .btn-neutral, .btn-outline):not(.btn-circle):not(.btn-square):hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 14px rgb(0 0 0 / 0.10);
+    }
+
+    /* Sidebar: hover/activo redondeado, no rectangular */
+    .glass-sidebar .menu {
+        padding: 0.25rem;
+    }
+
+    .glass-sidebar .menu :where(li > a, li > details > summary) {
+        border-radius: 1rem !important;
+        transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    }
+
+    .glass-sidebar .menu :where(li > a, li > details > summary):hover,
+    .glass-sidebar .menu :where(li > a, li > details > summary):focus-visible {
+        background-color: rgb(255 255 255 / 0.28) !important;
+        box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
+        outline: none;
+    }
+
+    .glass-sidebar .menu .mary-active-menu,
+    .glass-sidebar .menu :where(li > details > summary.bg-base-300) {
+        background-color: rgb(255 255 255 / 0.42) !important;
+        box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.22);
+    }
+
+    /* Campos del formulario: nativos + DaisyUI/MaryUI */
+    :where(
+        input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not(.drawer-toggle),
+        textarea,
+        select,
+        .input,
+        .textarea,
+        .select,
+        .file-input
+    ) {
+        border-radius: 1rem !important;
+        border: 1px solid rgb(255 255 255 / 0.36) !important;
+        background-color: rgb(255 255 255 / 0.82) !important;
+        -webkit-backdrop-filter: blur(18px);
+        backdrop-filter: blur(18px);
+        box-shadow: 0 8px 22px rgb(0 0 0 / 0.08);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+    }
+
+    :where(
+        input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not(.drawer-toggle),
+        textarea,
+        select,
+        .input,
+        .textarea,
+        .select,
+        .file-input
+    )::placeholder {
+        color: rgb(31 41 55 / 0.45);
+    }
+
+    :where(
+        input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not(.drawer-toggle),
+        textarea,
+        select,
+        .input,
+        .textarea,
+        .select,
+        .file-input
+    ):focus,
+    :where(
+        input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not(.drawer-toggle),
+        textarea,
+        select,
+        .input,
+        .textarea,
+        .select,
+        .file-input
+    ):focus-visible {
+        outline: none;
+        border-color: rgb(106 145 73 / 0.55) !important;
+        box-shadow: 0 0 0 4px rgb(106 145 73 / 0.14), 0 12px 28px rgb(0 0 0 / 0.10) !important;
+    }
+
+    /* ─── Dark mode overrides ─── */
+    [data-theme="uneThemeDark"] .glass-card {
+        background-color: rgb(255 255 255 / 0.07) !important;
+        border-color: rgb(255 255 255 / 0.10) !important;
+        box-shadow: 0 8px 32px rgb(0 0 0 / 0.45);
+    }
+
+    [data-theme="uneThemeDark"] .glass-card:hover {
+        box-shadow: 0 20px 48px rgb(0 0 0 / 0.60);
+    }
+
+    [data-theme="uneThemeDark"] .glass-surface {
+        background-color: rgb(30 32 40 / 0.90) !important;
+        border-color: rgb(255 255 255 / 0.08) !important;
+    }
+
+    [data-theme="uneThemeDark"] .glass-sidebar {
+        background-color: rgb(255 255 255 / 0.05) !important;
+        border-color: rgb(255 255 255 / 0.08) !important;
+    }
+
+    [data-theme="uneThemeDark"] .glass-navbar {
+        background-color: rgb(22 24 31 / 0.80) !important;
+        border-color: rgb(255 255 255 / 0.08);
+    }
+
+    [data-theme="uneThemeDark"] .glass-navbar.scrolled {
+        background-color: rgb(22 24 31 / 0.60) !important;
+        box-shadow: 0 4px 24px rgb(0 0 0 / 0.30);
+    }
+
+    [data-theme="uneThemeDark"] .btn:is(.btn-primary, .btn-secondary, .btn-accent, .btn-error, .btn-info, .btn-success, .btn-warning, .btn-neutral, .btn-outline):not(.btn-circle):not(.btn-square) {
+        box-shadow: 0 5px 12px rgb(0 0 0 / 0.18);
+    }
+
+    [data-theme="uneThemeDark"] #main-drawer ~ .drawer-side .drawer-overlay {
+        background-color: rgb(2 6 23 / 0.44);
+    }
+
+    [data-theme="uneThemeDark"] .glass-sidebar .menu :where(li > a, li > details > summary):hover,
+    [data-theme="uneThemeDark"] .glass-sidebar .menu :where(li > a, li > details > summary):focus-visible {
+        background-color: rgb(255 255 255 / 0.08) !important;
+        box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
+    }
+
+    [data-theme="uneThemeDark"] .glass-sidebar .menu .mary-active-menu,
+    [data-theme="uneThemeDark"] .glass-sidebar .menu :where(li > details > summary.bg-base-300) {
+        background-color: rgb(127 179 86 / 0.18) !important;
+        box-shadow: inset 0 0 0 1px rgb(127 179 86 / 0.22);
+    }
+
+    [data-theme="uneThemeDark"] :where(
+        input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not(.drawer-toggle),
+        textarea,
+        select,
+        .input,
+        .textarea,
+        .select,
+        .file-input
+    ) {
+        background-color: rgb(30 32 40 / 0.82) !important;
+        border-color: rgb(255 255 255 / 0.12) !important;
+        box-shadow: 0 10px 28px rgb(0 0 0 / 0.35);
+    }
+
+    [data-theme="uneThemeDark"] :where(
+        input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not(.drawer-toggle),
+        textarea,
+        select,
+        .input,
+        .textarea,
+        .select,
+        .file-input
+    )::placeholder {
+        color: rgb(229 231 235 / 0.45);
+    }
+}
