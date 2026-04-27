@@ -41,8 +41,8 @@ new #[Layout('layouts.app')] class extends Component
                 return;
             }
 
-            $this->alumno = $result;
-            $aluId = $this->alumno['alu_id'];
+            $this->alumno = (array) $result;
+            $aluId = (int) $result->alu_id;
 
             $toArrayMap = fn ($collection) => $collection->map(fn ($item) => (array) $item)->toArray();
 

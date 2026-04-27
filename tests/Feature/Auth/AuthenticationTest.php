@@ -2,11 +2,12 @@
 
 namespace Tests\Feature\Auth;
 
-use App\Services\AlumnoExternoService;
 use App\Models\User;
+use App\Services\AlumnoExternoService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
 use Mockery;
+use stdClass;
 use Tests\TestCase;
 
 class AuthenticationTest extends TestCase
@@ -58,6 +59,11 @@ class AuthenticationTest extends TestCase
 
     public function test_alumnos_can_authenticate_using_legacy_documento_and_pin(): void
     {
+        $alumno = new stdClass;
+        $alumno->per_nombre = 'Juan';
+        $alumno->per_apelli = 'Perez';
+        $alumno->alu_perdoc = '1234567';
+
         $service = Mockery::mock(AlumnoExternoService::class);
         $service->shouldReceive('autenticarConsultor')
             ->once()
@@ -66,11 +72,7 @@ class AuthenticationTest extends TestCase
         $service->shouldReceive('resolverAlumno')
             ->once()
             ->with('1234567')
-            ->andReturn([
-                'per_nombre' => 'Juan',
-                'per_apelli' => 'Perez',
-                'alu_perdoc' => '1234567',
-            ]);
+            ->andReturn($alumno);
 
         $this->app->instance(AlumnoExternoService::class, $service);
 

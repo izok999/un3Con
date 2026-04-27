@@ -12,6 +12,7 @@ use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Validate;
 use Livewire\Form;
 use Spatie\Permission\Models\Role;
+use stdClass;
 use Throwable;
 
 class LegacyAlumnoLoginForm extends Form
@@ -121,13 +122,10 @@ class LegacyAlumnoLoginForm extends Form
         return $documento !== '' ? $documento : trim($this->documento);
     }
 
-    /**
-     * @param  array<string, mixed>  $alumno
-     */
-    protected function resolveAlumnoName(array $alumno): string
+    protected function resolveAlumnoName(stdClass $alumno): string
     {
-        $firstName = trim((string) ($alumno['per_nombre'] ?? ''));
-        $lastName = trim((string) ($alumno['per_apelli'] ?? ''));
+        $firstName = trim((string) ($alumno->per_nombre ?? ''));
+        $lastName = trim((string) ($alumno->per_apelli ?? ''));
         $fullName = trim($firstName.' '.$lastName);
 
         return $fullName !== '' ? $fullName : 'Alumno';

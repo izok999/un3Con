@@ -1,6 +1,11 @@
 <x-app-layout>
     <x-slot name="header">Dashboard</x-slot>
-
+    <div class="card glass-card">
+        <div class="card-body">
+            <h3 class="card-title text-base">Bienvenido, {{ auth()->user()->name }}</h3>
+            <p class="text-base-content/70">Usá el menú lateral para acceder a tus consultas académicas y financieras.</p>
+        </div>
+    </div>
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div class="stat glass-card">
             <div class="stat-figure text-primary">
@@ -44,10 +49,4 @@
         </div>
     </div>
 
-    <div class="card glass-card">
-        <div class="card-body">
-            <h3 class="card-title text-base">Bienvenido, {{ auth()->user()->name }}</h3>
-            <p class="text-base-content/70">Usá el menú lateral para acceder a tus consultas académicas y financieras.</p>
-        </div>
-    </div>
 </x-app-layout>

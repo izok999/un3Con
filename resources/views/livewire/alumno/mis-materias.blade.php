@@ -1,13 +1,20 @@
 <?php
 
-use Livewire\Component;
 use App\Services\AlumnoExternoService;
+use Illuminate\Support\Collection;
+use Livewire\Attributes\Layout;
+use Livewire\Volt\Component;
 
-new class extends Component
+new #[Layout('layouts.app')] class extends Component
 {
     public ?object $alumno = null;
-    public $materias;
+    public Collection $materias;
     public string $error = '';
+
+    public function boot(): void
+    {
+        $this->materias = collect();
+    }
 
     public function mount(AlumnoExternoService $service): void
     {
@@ -33,9 +40,9 @@ new class extends Component
 <div>
     <x-mary-header title="Materias Inscriptas" subtitle="Periodo vigente" separator />
 
-    @if($error)
+    @if($error !== '')
         <x-mary-alert title="{{ $error }}" icon="o-exclamation-triangle" class="alert-warning" />
-    @elseif($materias?->isEmpty())
+    @elseif($materias->isEmpty())
         <x-mary-alert title="No tenés materias inscriptas en el periodo actual." icon="o-information-circle" class="alert-info" />
     @else
         <x-mary-card shadow>

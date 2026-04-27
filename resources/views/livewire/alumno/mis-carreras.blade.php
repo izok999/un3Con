@@ -1,13 +1,20 @@
 <?php
 
-use Livewire\Component;
 use App\Services\AlumnoExternoService;
+use Illuminate\Support\Collection;
+use Livewire\Attributes\Layout;
+use Livewire\Volt\Component;
 
-new class extends Component
+new #[Layout('layouts.app')] class extends Component
 {
     public ?object $alumno = null;
-    public $carreras;
+    public Collection $carreras;
     public string $error = '';
+
+    public function boot(): void
+    {
+        $this->carreras = collect();
+    }
 
     public function mount(AlumnoExternoService $service): void
     {
@@ -33,9 +40,9 @@ new class extends Component
 <div>
     <x-mary-header title="Mis Carreras" subtitle="Habilitaciones vigentes" separator />
 
-    @if($error)
+    @if($error !== '')
         <x-mary-alert title="{{ $error }}" icon="o-exclamation-triangle" class="alert-warning" />
-    @elseif($carreras?->isEmpty())
+    @elseif($carreras->isEmpty())
         <x-mary-alert title="No se encontraron carreras activas." icon="o-information-circle" class="alert-info" />
     @else
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

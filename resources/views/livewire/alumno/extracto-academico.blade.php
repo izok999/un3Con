@@ -1,14 +1,21 @@
 <?php
 
-use Livewire\Component;
 use App\Services\AlumnoExternoService;
+use Illuminate\Support\Collection;
+use Livewire\Attributes\Layout;
+use Livewire\Volt\Component;
 
-new class extends Component
+new #[Layout('layouts.app')] class extends Component
 {
     public ?object $alumno = null;
-    public $extracto;
+    public Collection $extracto;
     public string $error = '';
     public string $search = '';
+
+    public function boot(): void
+    {
+        $this->extracto = collect();
+    }
 
     public function mount(AlumnoExternoService $service): void
     {
@@ -31,7 +38,7 @@ new class extends Component
 
     public function getExtractoFiltradoProperty()
     {
-        if (! $this->extracto) {
+        if ($this->extracto->isEmpty()) {
             return collect();
         }
         if (! $this->search) {
@@ -50,7 +57,7 @@ new class extends Component
 <div>
     <x-mary-header title="Extracto Académico" subtitle="Historial de calificaciones" separator />
 
-    @if($error)
+    @if($error !== '')
         <x-mary-alert title="{{ $error }}" icon="o-exclamation-triangle" class="alert-warning" />
     @else
         <x-mary-input

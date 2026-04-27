@@ -2,11 +2,12 @@
 
 namespace App\Services;
 
-use Illuminate\Support\LazyCollection;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\LazyCollection;
+use Illuminate\Support\Str;
+use stdClass;
 
 class AlumnoExternoService
 {
@@ -19,16 +20,54 @@ class AlumnoExternoService
      * Resolver el registro de alumno a partir del documento (cédula).
      * Se cachea 30 minutos porque no cambia frecuentemente.
      */
-    public function resolverAlumno(string $documento): ?array
+    public function resolverAlumno(string $documento): ?stdClass
     {
-        return Cache::remember("alumno_doc_{$documento}", 1800, function () use ($documento) {
-            $result = $this->query()
-                ->table('sh_maestros.vw_alumnos_00')
-                ->where('alu_perdoc', $documento)
-                ->first();
+        $cacheKey = "alumno_doc_{$documento}";
+        $cachedAlumno = Cache::get($cacheKey);
 
-            return $result ? (array) $result : null;
-        });
+        if ($cachedAlumno !== null) {
+            $normalizedAlumno = $this->normalizeAlumnoPayload($cachedAlumno);
+
+            if ($normalizedAlumno !== null) {
+                if (! is_array($cachedAlumno)) {
+                    Cache::put($cacheKey, (array) $normalizedAlumno, 1800);
+                }
+
+                return $normalizedAlumno;
+            }
+
+            Cache::forget($cacheKey);
+        }
+
+        $result = $this->query()
+            ->table('sh_maestros.vw_alumnos_00')
+            ->where('alu_perdoc', $documento)
+            ->first();
+
+        if (! $result) {
+            return null;
+        }
+
+        Cache::put($cacheKey, (array) $result, 1800);
+
+        return $result;
+    }
+
+    protected function normalizeAlumnoPayload(mixed $payload): ?stdClass
+    {
+        if (is_array($payload)) {
+            return (object) $payload;
+        }
+
+        if (! is_object($payload)) {
+            return null;
+        }
+
+        $attributes = get_object_vars($payload);
+
+        unset($attributes['__PHP_Incomplete_Class_Name']);
+
+        return (object) $attributes;
     }
 
     /**
@@ -85,13 +124,28 @@ class AlumnoExternoService
             return $this->query()
                 ->table('sh_movimientos.vw_alumnos_habilitacion_21')
                 ->where('alu_id', $aluId)
-                /*->where('hal_vigent', true)/* tiene que mostrar igual si no es vigente  */
+                /* ->where('hal_vigent', true)/* tiene que mostrar igual si no es vigente */
                 ->get()
                 ->map(fn ($row) => (array) $row)
                 ->toArray();
         });
 
-        return collect($data);
+        return collect($data)
+            ->map(function (mixed $row): stdClass {
+                if (is_array($row)) {
+                    return (object) $row;
+                }
+
+                if ($row instanceof stdClass) {
+                    return $row;
+                }
+
+                $attributes = get_object_vars($row);
+
+                unset($attributes['__PHP_Incomplete_Class_Name']);
+
+                return (object) $attributes;
+            });
     }
 
     /**
@@ -100,7 +154,7 @@ class AlumnoExternoService
     public function extractoAcademico(int $aluId): Collection
     {
         return $this->query()
-            ->table('sh_movimientos.vw_extracto_academico_01')/* vw_extracto_academico_11*/
+            ->table('sh_movimientos.vw_extracto_academico_01')/* vw_extracto_academico_11 */
             ->where('aci_idalu', $aluId)
             ->orderBy('act_fecha', 'desc')
             ->get();

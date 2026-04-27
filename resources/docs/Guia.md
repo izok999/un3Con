@@ -680,10 +680,12 @@ class AlumnoExternoService
     public function resolverAlumno(string $documento): ?object
     {
         return Cache::remember("alumno_doc_{$documento}", 1800, function () use ($documento) {
-            return $this->query()
+            $result = $this->query()
                 ->table('sh_maestros.vw_alumnos_00')
                 ->where('alu_perdoc', $documento)
                 ->first();
+
+            return $result ?: null;
         });
     }
 
@@ -696,7 +698,6 @@ class AlumnoExternoService
             return $this->query()
                 ->table('sh_movimientos.vw_alumnos_habilitacion_21')
                 ->where('alu_id', $aluId)
-                ->where('hal_vigent', true)
                 ->get();
         });
     }
@@ -784,6 +785,8 @@ public function mount(AlumnoExternoService $service)
 ```
 
 > **Nota:** Este servicio NO importa datos — consulta en tiempo real. Los datos costosos (perfil, carreras) se cachean en Redis con TTL de 30 minutos.
+
+> **Ajuste importante sobre el legacy:** en esta base externa, las vistas `sh_maestros.vw_alumnos_00`, `sh_movimientos.vw_alumnos_habilitacion_21`, `sh_movimientos.vw_extracto_academico_01`, `sh_movimientos.vw_alumnos_inscriptos_materias_14` y `sh_movimientos.vw_alumnos_deudas_saldos_12` responden correctamente y son las que usa hoy el portal de alumno. Algunas funciones heredadas documentadas en el consultor viejo, como `sh_academico.fn_busca_alumnos_habilitacion_extracto(...)` y `sh_movimientos.fn_consultor_alumnos_deudas(...)`, hoy fallan en esta base por dependencias rotas a vistas legacy no disponibles, así que no deben tomarse como fuente primaria para estas pantallas.
 
 ### 6.8 Inspeccionar la BD externa con pgAdmin
 
