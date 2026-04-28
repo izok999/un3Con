@@ -36,6 +36,10 @@ new #[Layout('layouts.guest')] class extends Component
     <!-- Session Status -->
     <x-auth-session-status class="mb-4" :status="session('status')" />
 
+    @if ($errors->has('oauth'))
+        <x-mary-alert title="{{ $errors->first('oauth') }}" icon="o-exclamation-triangle" class="alert-error mb-4" />
+    @endif
+
     <form wire:submit="login">
         <!-- Email -->
         <div class="form-control w-full">
@@ -123,6 +127,10 @@ new #[Layout('layouts.guest')] class extends Component
         </svg>
         Ingresar con Google
     </a>
+
+    <p class="text-sm text-base-content/70 mt-3 text-center">
+        Si es tu primer ingreso con Google, después te vamos a pedir tu cédula para vincular tu cuenta de alumno.
+    </p>
 
     <p class="text-center text-sm mt-6 text-base-content/60">
         ¿No tenés cuenta?

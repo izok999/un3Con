@@ -161,6 +161,18 @@ class AlumnoExternoService
     }
 
     /**
+     * Extracto académico filtrado por la habilitación actual cuando la vista expone ese campo.
+     */
+    public function extractoPorHabilitacion(int $aluId, int $halId): Collection
+    {
+        return $this->filterByFirstAvailableField(
+            $this->extractoAcademico($aluId),
+            $halId,
+            ['aci_idhal', 'act_idhal', 'hal_id'],
+        )->values();
+    }
+
+    /**
      * Materias inscriptas vigentes en el periodo actual.
      */
     public function materiasInscriptas(int $aluId): Collection
@@ -170,6 +182,28 @@ class AlumnoExternoService
             ->where('alu_id', $aluId)
             ->where('imi_vigent', true)
             ->get();
+    }
+
+    /**
+     * Materias inscriptas filtradas por la habilitación o recurso vigente.
+     */
+    public function materiasPorHabilitacion(int $aluId, int $halId, ?int $rscId = null): Collection
+    {
+        $materias = $this->materiasInscriptas($aluId);
+
+        if ($rscId !== null) {
+            $materias = $this->filterByFirstAvailableField(
+                $materias,
+                $rscId,
+                ['inm_idrsc', 'imi_idrsc', 'hal_idrsc'],
+            );
+        }
+
+        return $this->filterByFirstAvailableField(
+            $materias,
+            $halId,
+            ['imi_idhal', 'inm_idhal', 'hal_id'],
+        )->values();
     }
 
     /**
@@ -184,6 +218,28 @@ class AlumnoExternoService
     }
 
     /**
+     * Deudas asociadas a una habilitación, cuando la vista expone recurso o periodo.
+     */
+    public function deudasPorHabilitacion(int $aluId, int $rscId, ?int $periodoId = null): Collection
+    {
+        $deudas = $this->filterByFirstAvailableField(
+            $this->deudas($aluId),
+            $rscId,
+            ['dit_idrsc', 'deu_idrsc', 'rsc_id', 'hal_idrsc'],
+        );
+
+        if ($periodoId !== null) {
+            $deudas = $this->filterByFirstAvailableField(
+                $deudas,
+                $periodoId,
+                ['dit_idple', 'deu_idple', 'ple_id', 'hal_idple'],
+            );
+        }
+
+        return $deudas->values();
+    }
+
+    /**
      * Asistencia por materia.
      */
     public function asistencia(int $aluId): Collection
@@ -192,6 +248,28 @@ class AlumnoExternoService
             ->table('sh_movimientos.vw_asistencia_alumnos_14')
             ->where('aai_idalu', $aluId)
             ->get();
+    }
+
+    /**
+     * Asistencia asociada a una habilitación, cuando la vista expone recurso o periodo.
+     */
+    public function asistenciaPorHabilitacion(int $aluId, int $rscId, ?int $periodoId = null): Collection
+    {
+        $asistencias = $this->filterByFirstAvailableField(
+            $this->asistencia($aluId),
+            $rscId,
+            ['aal_idrsc', 'aai_idrsc', 'rsc_id', 'hal_idrsc'],
+        );
+
+        if ($periodoId !== null) {
+            $asistencias = $this->filterByFirstAvailableField(
+                $asistencias,
+                $periodoId,
+                ['aal_idple', 'aai_idple', 'ple_id', 'hal_idple'],
+            );
+        }
+
+        return $asistencias->values();
     }
 
     /**
@@ -244,5 +322,54 @@ class AlumnoExternoService
         }
 
         return $query->get();
+    }
+
+    /**
+     * @param  Collection<int, mixed>  $rows
+     * @param  array<int, string>  $candidateFields
+     */
+    protected function filterByFirstAvailableField(Collection $rows, int|string $expectedValue, array $candidateFields): Collection
+    {
+        $field = collect($candidateFields)->first(function (string $candidate) use ($rows): bool {
+            return $rows->contains(function (mixed $row) use ($candidate): bool {
+                return $this->rowHasField($row, $candidate);
+            });
+        });
+
+        if ($field === null) {
+            return $rows;
+        }
+
+        return $rows->filter(function (mixed $row) use ($field, $expectedValue): bool {
+            $value = $this->rowGet($row, $field);
+
+            return $value !== null && (string) $value === (string) $expectedValue;
+        });
+    }
+
+    protected function rowHasField(mixed $row, string $field): bool
+    {
+        if (is_array($row)) {
+            return array_key_exists($field, $row);
+        }
+
+        if (! is_object($row)) {
+            return false;
+        }
+
+        return property_exists($row, $field) || array_key_exists($field, get_object_vars($row));
+    }
+
+    protected function rowGet(mixed $row, string $field): mixed
+    {
+        if (is_array($row)) {
+            return $row[$field] ?? null;
+        }
+
+        if (! is_object($row)) {
+            return null;
+        }
+
+        return $row->{$field} ?? null;
     }
 }

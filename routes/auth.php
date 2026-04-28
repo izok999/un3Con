@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\OAuthController;
 use App\Http\Controllers\Auth\VerifyEmailController;
+use App\Livewire\Actions\Logout;
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
@@ -27,6 +28,9 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::middleware('auth')->group(function () {
+    Volt::route('auth/link-documento', 'pages.auth.link-documento')
+        ->name('auth.oauth.link-documento');
+
     Volt::route('verify-email', 'pages.auth.verify-email')
         ->name('verification.notice');
 
@@ -38,7 +42,7 @@ Route::middleware('auth')->group(function () {
         ->name('password.confirm');
 
     Route::post('logout', function () {
-        (new \App\Livewire\Actions\Logout)();
+        (new Logout)();
 
         return redirect('/');
     })->name('logout');

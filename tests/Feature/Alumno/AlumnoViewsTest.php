@@ -19,6 +19,7 @@ class AlumnoViewsTest extends TestCase
 
     public function test_alumno_routes_render_with_mocked_external_service(): void
     {
+        /** @var User $user */
         $user = User::factory()->create([
             'documento' => '5413971',
         ]);
@@ -90,8 +91,92 @@ class AlumnoViewsTest extends TestCase
             ->assertSee('INGENIERÍA DE SISTEMAS');
     }
 
+    public function test_detalle_carrera_loads_lazy_sections_with_per_habilitacion_service_methods(): void
+    {
+        /** @var User $user */
+        $user = User::factory()->create([
+            'documento' => '5413971',
+        ]);
+
+        Role::findOrCreate('ALUMNO', 'web');
+        $user->assignRole('ALUMNO');
+
+        $this->actingAs($user);
+
+        $alumno = new stdClass;
+        $alumno->alu_id = 42178;
+        $alumno->alu_perdoc = '5413971';
+        $alumno->per_nombre = 'ISAAC RAFAEL';
+        $alumno->per_apelli = 'BRITEZ PAREDES';
+
+        $carrera = new stdClass;
+        $carrera->hal_id = 58655;
+        $carrera->hal_idrsc = 971;
+        $carrera->hal_idple = 20261;
+        $carrera->uac_descri = 'Facultad Politécnica';
+        $carrera->pac_descri = 'INGENIERÍA DE SISTEMAS';
+        $carrera->ciu_descri = 'CIUDAD DEL ESTE';
+        $carrera->ple_codigo = '2026';
+        $carrera->ple_descri = 'PERIODO LECTIVO 2026';
+        $carrera->hal_vigent = true;
+
+        $materia = new stdClass;
+        $materia->mat_descri = 'COMUNICACIÓN ORAL Y ESCRITA';
+        $materia->cur_descri = 'PRIMER SEMESTRE';
+        $materia->tur_descri = 'INTEGRAL';
+        $materia->sec_descri = 'ÚNICA';
+
+        $evaluacion = new stdClass;
+        $evaluacion->mat_descri = 'COMUNICACIÓN ORAL Y ESCRITA';
+        $evaluacion->tev_descri = 'PRIMER PARCIAL';
+        $evaluacion->evp_fecha = '15/04/2026';
+        $evaluacion->epi_puntaj = 18;
+        $evaluacion->evp_ptotal = 20;
+
+        $asistencia = new stdClass;
+        $asistencia->mat_descri = 'COMUNICACIÓN ORAL Y ESCRITA';
+        $asistencia->cur_descri = 'PRIMER SEMESTRE';
+        $asistencia->alu_clase = 20;
+        $asistencia->alu_presen = 18;
+
+        $deuda = new stdClass;
+        $deuda->aca_descri = 'Cuota abril';
+        $deuda->dit_vencim = '30/04/2026';
+        $deuda->dit_saldo = 150000;
+
+        $extracto = new stdClass;
+        $extracto->mat_descri = 'BASE DE DATOS I';
+        $extracto->tev_descri = 'SEGUNDO FINAL';
+        $extracto->act_periodo = '2025';
+        $extracto->act_fecha = '09/12/2025';
+        $extracto->cal_notaci = '5';
+        $extracto->cal_situac = 1;
+
+        $service = Mockery::mock(AlumnoExternoService::class);
+        $service->shouldReceive('resolverAlumno')->once()->with('5413971')->andReturn($alumno);
+        $service->shouldReceive('carreras')->once()->with(42178)->andReturn(new Collection([$carrera]));
+        $service->shouldReceive('materiasPorHabilitacion')->once()->with(42178, 58655, 971)->andReturn(new Collection([$materia]));
+        $service->shouldReceive('extractoPorHabilitacion')->once()->with(42178, 58655)->andReturn(new Collection([$extracto]));
+        $service->shouldReceive('deudasPorHabilitacion')->once()->with(42178, 971, 20261)->andReturn(new Collection([$deuda]));
+        $service->shouldReceive('asistenciaPorHabilitacion')->once()->with(42178, 971, 20261)->andReturn(new Collection([$asistencia]));
+        $service->shouldReceive('evaluaciones')->once()->with(58655)->andReturn(new Collection([$evaluacion]));
+
+        $this->app->instance(AlumnoExternoService::class, $service);
+
+        Volt::test('alumno.detalle-carrera', ['halId' => 58655])
+            ->assertSee('Detalle de carrera')
+            ->assertSee('INGENIERÍA DE SISTEMAS')
+            ->call('loadData')
+            ->assertSet('isLoaded', true)
+            ->assertSee('COMUNICACIÓN ORAL Y ESCRITA')
+            ->assertSee('PRIMER PARCIAL')
+            ->assertSee('Cuota abril')
+            ->assertSee('BASE DE DATOS I');
+    }
+
     public function test_alumno_route_shows_error_when_documento_has_no_external_match(): void
     {
+        /** @var User $user */
         $user = User::factory()->create([
             'documento' => '5413971',
         ]);
@@ -153,5 +238,52 @@ class AlumnoViewsTest extends TestCase
         $this->assertInstanceOf(stdClass::class, $carreras->first());
         $this->assertSame('Facultad Politécnica', $carreras->first()->uac_descri);
         $this->assertTrue($carreras->first()->hal_vigent);
+    }
+
+    public function test_per_habilitacion_service_methods_filter_with_available_external_fields(): void
+    {
+        $service = new class(collect([(object) ['mat_descri' => 'COMUNICACIÓN ORAL Y ESCRITA', 'inm_idrsc' => 971], (object) ['mat_descri' => 'ÁLGEBRA', 'inm_idrsc' => 999]]), collect([(object) ['mat_descri' => 'BASE DE DATOS I', 'aci_idhal' => 58655], (object) ['mat_descri' => 'MATEMÁTICA', 'aci_idhal' => 99999]]), collect([(object) ['aca_descri' => 'Cuota abril', 'deu_idrsc' => 971, 'deu_idple' => 20261], (object) ['aca_descri' => 'Cuota mayo', 'deu_idrsc' => 971, 'deu_idple' => 20262]]), collect([(object) ['mat_descri' => 'COMUNICACIÓN ORAL Y ESCRITA', 'aal_idrsc' => 971, 'aal_idple' => 20261], (object) ['mat_descri' => 'ÁLGEBRA', 'aal_idrsc' => 999, 'aal_idple' => 20261]])) extends AlumnoExternoService
+        {
+            public function __construct(
+                public Collection $materiasMock,
+                public Collection $extractoMock,
+                public Collection $deudasMock,
+                public Collection $asistenciaMock,
+            ) {}
+
+            public function materiasInscriptas(int $aluId): Collection
+            {
+                return $this->materiasMock;
+            }
+
+            public function extractoAcademico(int $aluId): Collection
+            {
+                return $this->extractoMock;
+            }
+
+            public function deudas(int $aluId): Collection
+            {
+                return $this->deudasMock;
+            }
+
+            public function asistencia(int $aluId): Collection
+            {
+                return $this->asistenciaMock;
+            }
+        };
+
+        $materias = $service->materiasPorHabilitacion(42178, 58655, 971);
+        $extracto = $service->extractoPorHabilitacion(42178, 58655);
+        $deudas = $service->deudasPorHabilitacion(42178, 971, 20261);
+        $asistencias = $service->asistenciaPorHabilitacion(42178, 971, 20261);
+
+        $this->assertCount(1, $materias);
+        $this->assertSame('COMUNICACIÓN ORAL Y ESCRITA', $materias->first()->mat_descri);
+        $this->assertCount(1, $extracto);
+        $this->assertSame('BASE DE DATOS I', $extracto->first()->mat_descri);
+        $this->assertCount(1, $deudas);
+        $this->assertSame('Cuota abril', $deudas->first()->aca_descri);
+        $this->assertCount(1, $asistencias);
+        $this->assertSame('COMUNICACIÓN ORAL Y ESCRITA', $asistencias->first()->mat_descri);
     }
 }

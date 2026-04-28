@@ -358,4 +358,28 @@
     )::placeholder {
         color: rgb(229 231 235 / 0.45);
     }
+
+    /* ─── Badges UNE ─── */
+    .badge {
+        padding-inline: 0.65em;
+        padding-block: 0.35em;
+        border-radius: 0.75rem;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+    }
+
+    .badge.badge-sm {
+        padding-inline: 0.55em;
+        padding-block: 0.28em;
+        border-radius: 0.625rem;
+        font-size: 0.65rem;
+    }
+
+    .badge.badge-lg {
+        padding-inline: 0.85em;
+        padding-block: 0.45em;
+        border-radius: 0.875rem;
+        font-size: 0.8rem;
+    }
 }

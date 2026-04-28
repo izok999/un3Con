@@ -98,6 +98,30 @@ Topbar sticky. La clase `.scrolled` se aplica automáticamente via JS al hacer s
 
 ---
 
+## Badges
+
+Todos los badges del sistema tienen padding y border-radius personalizados definidos globalmente en `app.css`. No requieren clases adicionales — se aplican automáticamente a cualquier elemento con clase `.badge`.
+
+| Variante | Clase | Border radius | Padding |
+|---|---|---|---|
+| Normal | `.badge` | `0.75rem` | `0.35em 0.65em` |
+| Pequeño | `.badge.badge-sm` | `0.625rem` | `0.28em 0.55em` |
+| Grande | `.badge.badge-lg` | `0.875rem` | `0.45em 0.85em` |
+
+Usar las clases de color DaisyUI de siempre:
+
+```html
+<span class="badge badge-success">Vigente</span>
+<span class="badge badge-warning badge-sm">No vigente</span>
+<span class="badge badge-error">Deuda</span>
+<span class="badge badge-neutral badge-sm">2026-I</span>
+<span class="badge badge-outline">Período</span>
+```
+
+Para páginas nuevas no es necesario nada adicional — el estilo global cubre todos los badges automáticamente.
+
+---
+
 ## Toggle de modo oscuro
 
 El checkbox con `id="theme-toggle"` puede colocarse en cualquier layout. El JS en `app.js` lo detecta por delegación.

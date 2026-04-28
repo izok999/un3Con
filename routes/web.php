@@ -1,11 +1,12 @@
 <?php
 
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
 // Raíz — redirige al dashboard si autenticado, si no al login
 Route::get('/', function () {
-    return auth()->check()
+    return Auth::check()
         ? redirect()->route('dashboard')
         : redirect()->route('login');
 });
@@ -16,16 +17,17 @@ Route::get('/bienvenida', fn () => view('welcome'))
     ->name('welcome');
 
 Route::view('dashboard', 'dashboard')
-    ->middleware(['auth', 'verified'])
+    ->middleware(['auth', 'verified', 'oauth.documento'])
     ->name('dashboard');
 
 Route::view('profile', 'profile')
-    ->middleware(['auth'])
+    ->middleware(['auth', 'oauth.documento'])
     ->name('profile');
 
 // Portal del alumno — solo rol ALUMNO
-Route::middleware(['auth', 'role:ALUMNO'])->group(function () {
+Route::middleware(['auth', 'oauth.documento', 'role:ALUMNO'])->group(function () {
     Volt::route('/mis-carreras', 'alumno.mis-carreras')->name('alumno.carreras');
+    Volt::route('/mis-carreras/{halId}', 'alumno.detalle-carrera')->name('alumno.carreras.show');
     Volt::route('/extracto-academico', 'alumno.extracto-academico')->name('alumno.extracto');
     Volt::route('/mis-materias', 'alumno.mis-materias')->name('alumno.materias');
     Volt::route('/mis-deudas', 'alumno.mis-deudas')->name('alumno.deudas');

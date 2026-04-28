@@ -3,6 +3,7 @@ Contraseña: @Sys-un3@W3B#2025
 Puerto: 5432
 Servidor =10.10.10.2;
 Base de datos: une_base
+
 function login(){
     $user = $_REQUEST['user'];
     $pass= $_REQUEST['pass'];
@@ -22,7 +23,7 @@ function login(){
     }
     json_enc($return);
 }
-Fn_busca_alumnos_une()
+Recomendación de Jorge: Fn_busca_alumnos_une()
 
 function m_carreras(){
     $alu =$_SESSION['user_logado'];
