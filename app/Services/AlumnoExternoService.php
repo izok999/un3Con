@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -76,7 +77,7 @@ class AlumnoExternoService
     public function autenticarConsultor(string $documento, string $pin, string $ip): ?array
     {
         $result = $this->query()->selectOne(
-            'select * from fn_consultor_verificacion_pin_web2(?, ?, ?)',
+            'select * from sh_movimientos.fn_consultor_verificacion_pin_web2(?, ?, ?)',
             [$documento, $pin, $ip],
         );
 
@@ -116,36 +117,136 @@ class AlumnoExternoService
     }
 
     /**
-     * Carreras activas (habilitaciones vigentes) del alumno.
+     * Habilitaciones del alumno usando la vista legacy optimizada.
      */
     public function carreras(int $aluId): Collection
     {
         $data = Cache::remember("alumno_{$aluId}_carreras", 1800, function () use ($aluId) {
             return $this->query()
-                ->table('sh_movimientos.vw_alumnos_habilitacion_21')
+                ->table('sh_movimientos.vw_alumnos_habilitacion_22')
+                ->select([
+                    'alu_id',
+                    'hal_id',
+                    'rsc_id',
+                    'car_id',
+                    'riu_id',
+                    'uac_descri',
+                    'ple_id',
+                    'ple_codigo',
+                    'pac_descri',
+                    'ciu_descri',
+                    'sed_id',
+                    'sed_descri',
+                    'pla_caneta',
+                ])
+                ->selectRaw('rsc_id as hal_idrsc')
+                ->selectRaw('ple_id as hal_idple')
                 ->where('alu_id', $aluId)
-                /* ->where('hal_vigent', true)/* tiene que mostrar igual si no es vigente */
+                ->orderByRaw('ple_codigo::numeric desc')
+                ->orderByDesc('hal_id')
                 ->get()
                 ->map(fn ($row) => (array) $row)
                 ->toArray();
         });
 
-        return collect($data)
-            ->map(function (mixed $row): stdClass {
-                if (is_array($row)) {
-                    return (object) $row;
+        $carreras = collect($data)
+            ->map(fn (mixed $row): ?stdClass => $this->normalizeCarreraPayload($row))
+            ->filter()
+            ->values();
+
+        $ultimoPeriodo = $carreras
+            ->map(fn (stdClass $carrera): ?int => $this->normalizePeriodoCodigo($carrera->ple_codigo ?? null))
+            ->filter(fn (?int $periodo): bool => $periodo !== null)
+            ->max();
+
+        return $carreras
+            ->map(function (stdClass $carrera) use ($ultimoPeriodo): stdClass {
+                if (! isset($carrera->hal_vigent)) {
+                    $periodoActual = $this->normalizePeriodoCodigo($carrera->ple_codigo ?? null);
+                    $carrera->hal_vigent = $ultimoPeriodo === null
+                        ? true
+                        : $periodoActual !== null && $periodoActual === $ultimoPeriodo;
                 }
 
-                if ($row instanceof stdClass) {
-                    return $row;
-                }
+                return $carrera;
+            })
+            ->values();
+    }
 
-                $attributes = get_object_vars($row);
+    protected function normalizeCarreraPayload(mixed $payload): ?stdClass
+    {
+        if (is_array($payload)) {
+            $carrera = (object) $payload;
+        } elseif ($payload instanceof stdClass) {
+            $carrera = $payload;
+        } elseif (is_object($payload)) {
+            $attributes = get_object_vars($payload);
 
-                unset($attributes['__PHP_Incomplete_Class_Name']);
+            unset($attributes['__PHP_Incomplete_Class_Name']);
 
-                return (object) $attributes;
-            });
+            $carrera = (object) $attributes;
+        } else {
+            return null;
+        }
+
+        $carrera->hal_idrsc ??= $carrera->rsc_id ?? null;
+        $carrera->hal_idple ??= $carrera->ple_id ?? null;
+
+        if (blank($carrera->ple_descri ?? null) && filled($carrera->ple_codigo ?? null)) {
+            $carrera->ple_descri = "PERIODO LECTIVO {$carrera->ple_codigo}";
+        }
+
+        if (property_exists($carrera, 'hal_vigent')) {
+            $halVigent = $this->normalizeBoolean($carrera->hal_vigent);
+
+            if ($halVigent === null) {
+                unset($carrera->hal_vigent);
+            } else {
+                $carrera->hal_vigent = $halVigent;
+            }
+        }
+
+        return $carrera;
+    }
+
+    protected function normalizeBoolean(mixed $value): ?bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value)) {
+            return match ($value) {
+                1 => true,
+                0 => false,
+                default => null,
+            };
+        }
+
+        if (! is_string($value)) {
+            return null;
+        }
+
+        return match (Str::lower(trim($value))) {
+            '1', 'true', 't', 'yes', 'y', 'on' => true,
+            '0', 'false', 'f', 'no', 'n', 'off' => false,
+            default => null,
+        };
+    }
+
+    protected function normalizePeriodoCodigo(mixed $periodo): ?int
+    {
+        if ($periodo === null) {
+            return null;
+        }
+
+        $normalizedPeriodo = trim((string) $periodo);
+
+        if ($normalizedPeriodo === '' || ! is_numeric($normalizedPeriodo)) {
+            return null;
+        }
+
+        return (int) $normalizedPeriodo;
     }
 
     /**
@@ -165,15 +266,30 @@ class AlumnoExternoService
      */
     public function extractoPorHabilitacion(int $aluId, int $halId): Collection
     {
-        return $this->filterByFirstAvailableField(
-            $this->extractoAcademico($aluId),
-            $halId,
-            ['aci_idhal', 'act_idhal', 'hal_id'],
-        )->values();
+        try {
+            return $this->queryExtractoPorHabilitacion($aluId, $halId)->values();
+        } catch (QueryException) {
+            return $this->filterByFirstAvailableField(
+                $this->extractoAcademico($aluId),
+                $halId,
+                ['aci_idhal', 'act_idhal', 'hal_id'],
+            )->values();
+        }
+    }
+
+    protected function queryExtractoPorHabilitacion(int $aluId, int $halId): Collection
+    {
+        return $this->query()
+            ->table('sh_movimientos.vw_extracto_academico_01')
+            ->where('aci_idalu', $aluId)
+            ->where('aci_idhal', $halId)
+            ->orderBy('act_fecha', 'desc')
+            ->get();
     }
 
     /**
      * Materias inscriptas vigentes en el periodo actual.
+     * sh_movimientos.vw_alumnos_inscriptos_materias_14 - es super lenta
      */
     public function materiasInscriptas(int $aluId): Collection
     {
@@ -189,6 +305,14 @@ class AlumnoExternoService
      */
     public function materiasPorHabilitacion(int $aluId, int $halId, ?int $rscId = null): Collection
     {
+        if ($rscId !== null) {
+            try {
+                return $this->queryMateriasPorRecurso($aluId, $rscId)->values();
+            } catch (QueryException) {
+                // Fallback for external schemas that still expose a different resource field name.
+            }
+        }
+
         $materias = $this->materiasInscriptas($aluId);
 
         if ($rscId !== null) {
@@ -204,6 +328,17 @@ class AlumnoExternoService
             $halId,
             ['imi_idhal', 'inm_idhal', 'hal_id'],
         )->values();
+    }
+
+    protected function queryMateriasPorRecurso(int $aluId, int $rscId): Collection
+    {
+        return $this->query()
+            ->table('sh_movimientos.vw_alumnos_inscriptos_materias_14')
+            ->where('alu_id', $aluId)
+            ->where('inm_idrsc', $rscId)
+            ->where('imi_vigent', true)
+            ->orderBy('cur_descri')
+            ->get();
     }
 
     /**
@@ -222,21 +357,38 @@ class AlumnoExternoService
      */
     public function deudasPorHabilitacion(int $aluId, int $rscId, ?int $periodoId = null): Collection
     {
-        $deudas = $this->filterByFirstAvailableField(
-            $this->deudas($aluId),
-            $rscId,
-            ['dit_idrsc', 'deu_idrsc', 'rsc_id', 'hal_idrsc'],
-        );
-
-        if ($periodoId !== null) {
+        try {
+            return $this->queryDeudasPorHabilitacion($aluId, $rscId, $periodoId)->values();
+        } catch (QueryException) {
             $deudas = $this->filterByFirstAvailableField(
-                $deudas,
-                $periodoId,
-                ['dit_idple', 'deu_idple', 'ple_id', 'hal_idple'],
+                $this->deudas($aluId),
+                $rscId,
+                ['dit_idrsc', 'deu_idrsc', 'rsc_id', 'hal_idrsc'],
             );
-        }
 
-        return $deudas->values();
+            if ($periodoId !== null) {
+                $deudas = $this->filterByFirstAvailableField(
+                    $deudas,
+                    $periodoId,
+                    ['dit_idple', 'deu_idple', 'ple_id', 'hal_idple'],
+                );
+            }
+
+            return $deudas->values();
+        }
+    }
+
+    protected function queryDeudasPorHabilitacion(int $aluId, int $rscId, ?int $periodoId = null): Collection
+    {
+        return $this->query()
+            ->table('sh_movimientos.vw_alumnos_deudas_saldos_12')
+            ->where('deu_idalu', $aluId)
+            ->where('deu_idrsc', $rscId)
+            ->when($periodoId !== null, function ($query) use ($periodoId) {
+                $query->where('deu_idple', $periodoId);
+            })
+            ->orderBy('dit_vencim', 'desc')
+            ->get();
     }
 
     /**
@@ -255,11 +407,15 @@ class AlumnoExternoService
      */
     public function asistenciaPorHabilitacion(int $aluId, int $rscId, ?int $periodoId = null): Collection
     {
-        $asistencias = $this->filterByFirstAvailableField(
-            $this->asistencia($aluId),
-            $rscId,
-            ['aal_idrsc', 'aai_idrsc', 'rsc_id', 'hal_idrsc'],
-        );
+        try {
+            $asistencias = $this->queryAsistenciaPorRecurso($aluId, $rscId);
+        } catch (QueryException) {
+            $asistencias = $this->filterByFirstAvailableField(
+                $this->asistencia($aluId),
+                $rscId,
+                ['aal_idrsc', 'aai_idrsc', 'rsc_id', 'hal_idrsc'],
+            );
+        }
 
         if ($periodoId !== null) {
             $asistencias = $this->filterByFirstAvailableField(
@@ -270,6 +426,15 @@ class AlumnoExternoService
         }
 
         return $asistencias->values();
+    }
+
+    protected function queryAsistenciaPorRecurso(int $aluId, int $rscId): Collection
+    {
+        return $this->query()
+            ->table('sh_movimientos.vw_asistencia_alumnos_14')
+            ->where('aai_idalu', $aluId)
+            ->where('aal_idrsc', $rscId)
+            ->get();
     }
 
     /**

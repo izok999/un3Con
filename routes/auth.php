@@ -22,12 +22,18 @@ Route::middleware('guest')->group(function () {
     // OAuth — Google
     Route::get('auth/google/redirect', [OAuthController::class, 'redirectToGoogle'])
         ->name('auth.google.redirect');
-
-    Route::get('auth/google/callback', [OAuthController::class, 'handleGoogleCallback'])
-        ->name('auth.google.callback');
 });
 
+Route::get('auth/google/link-existing', [OAuthController::class, 'redirectExistingAccountToGoogle'])
+    ->name('auth.google.link-existing');
+
+Route::get('auth/google/callback', [OAuthController::class, 'handleGoogleCallback'])
+    ->name('auth.google.callback');
+
 Route::middleware('auth')->group(function () {
+    Volt::route('auth/complete-account', 'pages.auth.complete-legacy-account')
+        ->name('auth.legacy.complete-account');
+
     Volt::route('auth/link-documento', 'pages.auth.link-documento')
         ->name('auth.oauth.link-documento');
 

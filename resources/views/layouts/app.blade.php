@@ -11,6 +11,62 @@
         <script>const t=localStorage.getItem('une-theme');if(t)document.documentElement.setAttribute('data-theme',t);</script>
     </head>
     <body class="min-h-screen font-sans antialiased bg-app-pattern text-base-content">
+        @php
+            $isAlumno = auth()->user()?->hasRole('ALUMNO') ?? false;
+            $isAdmin = auth()->user()?->hasRole('ADMIN') ?? false;
+
+            $navigationLinks = [
+                'home' => [
+                    'title' => 'Inicio',
+                    'icon' => 'o-home',
+                    'route' => 'dashboard',
+                    'active' => ['dashboard'],
+                ],
+                'carreras' => [
+                    'title' => 'Mis Carreras',
+                    'mobile_title' => 'Carreras',
+                    'icon' => 'o-building-library',
+                    'route' => 'alumno.carreras',
+                    'active' => ['alumno.carreras', 'alumno.carreras.*'],
+                ],
+                'extracto' => [
+                    'title' => 'Extracto Académico',
+                    'mobile_title' => 'Extracto',
+                    'icon' => 'o-document-text',
+                    'route' => 'alumno.extracto',
+                    'active' => ['alumno.extracto'],
+                ],
+                'materias' => [
+                    'title' => 'Materias Inscriptas',
+                    'mobile_title' => 'Materias',
+                    'icon' => 'o-book-open',
+                    'route' => 'alumno.materias',
+                    'active' => ['alumno.materias'],
+                ],
+                'deudas' => [
+                    'title' => 'Mis Deudas',
+                    'mobile_title' => 'Pagos',
+                    'icon' => 'o-currency-dollar',
+                    'route' => 'alumno.deudas',
+                    'active' => ['alumno.deudas'],
+                ],
+            ];
+
+            $alumnoSidebarSections = [
+                [
+                    'title' => 'Académico',
+                    'icon' => 'o-academic-cap',
+                    'items' => ['carreras', 'extracto', 'materias'],
+                ],
+                [
+                    'title' => 'Finanzas',
+                    'icon' => 'o-banknotes',
+                    'items' => ['deudas'],
+                ],
+            ];
+
+            $alumnoMobileNavigation = ['home', 'carreras', 'extracto', 'materias', 'deudas'];
+        @endphp
 
         <x-main full-width>
             <x-slot:sidebar drawer="main-drawer" class="glass-sidebar">
@@ -26,26 +82,32 @@
                 </div>
 
                 <x-menu activate-by-route class="mt-2">
-                    <x-menu-item title="Dashboard" icon="o-home" link="{{ route('dashboard') }}" />
+                    <x-menu-item
+                        title="{{ $navigationLinks['home']['title'] }}"
+                        icon="{{ $navigationLinks['home']['icon'] }}"
+                        link="{{ route($navigationLinks['home']['route']) }}"
+                    />
 
-                    @role('ALUMNO')
-                        <x-menu-sub title="Académico" icon="o-academic-cap">
-                            <x-menu-item title="Mis Carreras" icon="o-building-library" link="{{ route('alumno.carreras') }}" />
-                            <x-menu-item title="Extracto Académico" icon="o-document-text" link="{{ route('alumno.extracto') }}" />
-                            <x-menu-item title="Materias Inscriptas" icon="o-book-open" link="{{ route('alumno.materias') }}" />
-                        </x-menu-sub>
-                        <x-menu-sub title="Finanzas" icon="o-banknotes">
-                            <x-menu-item title="Mis Deudas" icon="o-currency-dollar" link="{{ route('alumno.deudas') }}" />
-                        </x-menu-sub>
-                    @endrole
+                    @if ($isAlumno)
+                        @foreach ($alumnoSidebarSections as $section)
+                            <x-menu-sub title="{{ $section['title'] }}" icon="{{ $section['icon'] }}">
+                                @foreach ($section['items'] as $itemKey)
+                                    @php
+                                        $item = $navigationLinks[$itemKey];
+                                    @endphp
+                                    <x-menu-item title="{{ $item['title'] }}" icon="{{ $item['icon'] }}" link="{{ route($item['route']) }}" />
+                                @endforeach
+                            </x-menu-sub>
+                        @endforeach
+                    @endif
 
-                    @role('ADMIN')
+                    @if ($isAdmin)
                         <x-menu-separator />
                         <x-menu-sub title="Administración" icon="o-cog-6-tooth">
                             <x-menu-item title="Dashboard Admin" icon="o-chart-bar" link="{{ route('admin.dashboard') }}" />
                             <x-menu-item title="Consulta Alumnos" icon="o-magnifying-glass" link="{{ route('admin.consulta-alumno') }}" />
                         </x-menu-sub>
-                    @endrole
+                    @endif
 
                     <x-menu-separator />
                     <x-menu-item title="Mi Perfil" icon="o-user" link="{{ route('profile') }}" />
@@ -55,9 +117,11 @@
             <x-slot:content>
                 {{-- Topbar --}}
                 <div id="main-topbar" class="navbar glass-navbar sticky top-0 z-50 mb-4">
-                    <label for="main-drawer" class="lg:hidden btn btn-ghost btn-sm">
-                        <x-icon name="o-bars-3" />
-                    </label>
+                    @unless ($isAlumno)
+                        <label for="main-drawer" class="lg:hidden btn btn-ghost btn-sm">
+                            <x-icon name="o-bars-3" />
+                        </label>
+                    @endunless
                     <div class="flex-1">
                         <span class="text-lg font-semibold">{{ $header ?? '' }}</span>
                     </div>
@@ -96,10 +160,49 @@
                     </div>
                 </div>
 
-                {{-- Page content --}}
-                {{ $slot }}
+                <div
+                    data-route-shell
+                    @class([
+                        'route-transition-shell',
+                        'mobile-bottom-nav-offset' => $isAlumno,
+                    ])
+                >
+                    {{ $slot }}
+                </div>
             </x-slot:content>
         </x-main>
+
+        @if ($isAlumno)
+            <nav
+                data-testid="alumno-mobile-bottom-nav"
+                aria-label="Navegacion principal del alumno"
+                class="mobile-bottom-nav glass-navbar fixed inset-x-4 z-[60] lg:hidden"
+            >
+                <div class="grid grid-cols-5 gap-1 p-2">
+                    @foreach ($alumnoMobileNavigation as $itemKey)
+                        @php
+                            $item = $navigationLinks[$itemKey];
+                            $isActive = request()->routeIs(...$item['active']);
+                        @endphp
+                        <a
+                            href="{{ route($item['route']) }}"
+                            data-nav-context="mobile"
+                            data-route-link="mobile-{{ $itemKey }}"
+                            wire:navigate
+                            @if ($isActive) aria-current="page" @endif
+                            @class([
+                                'mobile-bottom-nav-link flex flex-col items-center justify-center gap-1 px-2 py-2 text-center text-[0.68rem] font-semibold leading-tight transition',
+                                'bg-primary text-primary-content shadow-sm shadow-primary/30' => $isActive,
+                                'text-base-content/70 hover:bg-base-100/60 hover:text-base-content' => ! $isActive,
+                            ])
+                        >
+                            <x-icon :name="$item['icon']" class="h-5 w-5" />
+                            <span>{{ $item['mobile_title'] ?? $item['title'] }}</span>
+                        </a>
+                    @endforeach
+                </div>
+            </nav>
+        @endif
 
         <x-toast />
     </body>

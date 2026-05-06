@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\User;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
@@ -35,15 +36,26 @@ new #[Layout('layouts.guest')] class extends Component
     {
         $this->validate([
             'token' => ['required'],
-            'email' => ['required', 'string', 'email'],
+            'email' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string', 'confirmed', Rules\Password::defaults()],
         ]);
+
+        $email = $this->resolveResetEmail();
+
+        if (! $email) {
+            return;
+        }
 
         // Here we will attempt to reset the user's password. If it is successful we
         // will update the password on an actual user model and persist it to the
         // database. Otherwise we will parse the error and return the response.
         $status = Password::reset(
-            $this->only('email', 'password', 'password_confirmation', 'token'),
+            [
+                'email' => $email,
+                'password' => $this->password,
+                'password_confirmation' => $this->password_confirmation,
+                'token' => $this->token,
+            ],
             function ($user) {
                 $user->forceFill([
                     'password' => Hash::make($this->password),
@@ -67,14 +79,56 @@ new #[Layout('layouts.guest')] class extends Component
 
         $this->redirectRoute('login', navigate: true);
     }
+
+    protected function resolveResetEmail(): ?string
+    {
+        $identifier = trim($this->email);
+
+        if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
+            return Str::lower($identifier);
+        }
+
+        $user = User::query()->firstWhere('documento', $this->normalizeDocumento($identifier));
+
+        if (! $user) {
+            $this->addError('email', __(Password::INVALID_USER));
+
+            return null;
+        }
+
+        if (! $this->hasRecoverableEmail($user->email)) {
+            $this->addError('email', 'Esta cuenta todavía no tiene un correo recuperable. Ingresá con tu documento y PIN o vinculá Google primero.');
+
+            return null;
+        }
+
+        return $user->email;
+    }
+
+    protected function hasRecoverableEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL)
+            && ! Str::endsWith(Str::lower($email), ['@consultor.invalid', '@pending.invalid']);
+    }
+
+    protected function normalizeDocumento(string $documento): string
+    {
+        $normalizedDocumento = preg_replace('/\D+/', '', trim($documento));
+
+        if ($normalizedDocumento === null || $normalizedDocumento === '') {
+            return trim($documento);
+        }
+
+        return $normalizedDocumento;
+    }
 }; ?>
 
 <div>
     <form wire:submit="resetPassword">
-        <!-- Email Address -->
+        <!-- Email Address / Documento -->
         <div>
-            <x-input-label for="email" :value="__('Email')" />
-            <x-text-input wire:model="email" id="email" class="block mt-1 w-full" type="email" name="email" required autofocus autocomplete="username" />
+            <x-input-label for="email" :value="__('Correo o documento')" />
+            <x-text-input wire:model="email" id="email" class="block mt-1 w-full" type="text" name="email" required autofocus autocomplete="username" />
             <x-input-error :messages="$errors->get('email')" class="mt-2" />
         </div>
 

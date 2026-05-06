@@ -17,15 +17,15 @@ Route::get('/bienvenida', fn () => view('welcome'))
     ->name('welcome');
 
 Route::view('dashboard', 'dashboard')
-    ->middleware(['auth', 'verified', 'oauth.documento'])
+    ->middleware(['auth', 'legacy.account.complete', 'verified', 'oauth.documento'])
     ->name('dashboard');
 
 Route::view('profile', 'profile')
-    ->middleware(['auth', 'oauth.documento'])
+    ->middleware(['auth', 'legacy.account.complete', 'oauth.documento'])
     ->name('profile');
 
 // Portal del alumno — solo rol ALUMNO
-Route::middleware(['auth', 'oauth.documento', 'role:ALUMNO'])->group(function () {
+Route::middleware(['auth', 'legacy.account.complete', 'oauth.documento', 'role:ALUMNO'])->group(function () {
     Volt::route('/mis-carreras', 'alumno.mis-carreras')->name('alumno.carreras');
     Volt::route('/mis-carreras/{halId}', 'alumno.detalle-carrera')->name('alumno.carreras.show');
     Volt::route('/extracto-academico', 'alumno.extracto-academico')->name('alumno.extracto');

@@ -20,9 +20,26 @@ class ProfileTest extends TestCase
         $response
             ->assertOk()
             ->assertDontSee('$wire. = false', false)
+            ->assertSee('Vincular Google')
             ->assertSeeVolt('profile.update-profile-information-form')
             ->assertSeeVolt('profile.update-password-form')
             ->assertSeeVolt('profile.delete-user-form');
+    }
+
+    public function test_profile_page_hides_google_link_cta_when_account_is_already_linked(): void
+    {
+        $user = User::factory()->create([
+            'auth_provider' => 'google',
+            'auth_provider_id' => 'google-123',
+        ]);
+
+        $response = $this->actingAs($user)->get('/profile');
+
+        $response
+            ->assertOk()
+            ->assertDontSee('Vincular Google')
+            ->assertSee('Cuenta vinculada con Google')
+            ->assertSee($user->email);
     }
 
     public function test_profile_information_can_be_updated(): void

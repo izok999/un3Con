@@ -26,8 +26,30 @@ function syncThemeToggle() {
     }
 }
 
+let routeTransitionTimeout;
+
+function setRouteTransition(state) {
+    if (routeTransitionTimeout) {
+        window.clearTimeout(routeTransitionTimeout);
+    }
+
+    if (! state) {
+        delete document.documentElement.dataset.routeTransition;
+
+        return;
+    }
+
+    document.documentElement.dataset.routeTransition = state;
+}
+
 document.addEventListener('DOMContentLoaded', syncThemeToggle);
 document.addEventListener('livewire:navigated', syncThemeToggle);
+document.addEventListener('livewire:navigate', () => setRouteTransition('out'));
+document.addEventListener('livewire:navigated', () => {
+    setRouteTransition('in');
+
+    routeTransitionTimeout = window.setTimeout(() => setRouteTransition(null), 460);
+});
 
 // 4. Topbar: clase "scrolled" para el efecto glass intensificado al hacer scroll
 window.addEventListener('scroll', () => {

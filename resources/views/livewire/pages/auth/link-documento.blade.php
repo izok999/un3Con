@@ -4,12 +4,12 @@ use App\Models\User;
 use App\Services\AlumnoExternoService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Spatie\Permission\Models\Role;
-use Throwable;
 
 new #[Layout('layouts.app')] class extends Component
 {
@@ -46,7 +46,7 @@ new #[Layout('layouts.app')] class extends Component
 
         try {
             $alumno = $service->resolverAlumno($documento);
-        } catch (Throwable $exception) {
+        } catch (\Throwable $exception) {
             report($exception);
 
             throw ValidationException::withMessages([
@@ -77,13 +77,24 @@ new #[Layout('layouts.app')] class extends Component
         });
 
         Auth::login($linkedUser, remember: true);
-        request()->session()->regenerate();
+        Session::regenerate();
 
         if ($userToDelete) {
             $userToDelete->delete();
         }
 
-        $this->redirectIntended(default: route('alumno.carreras', absolute: false), navigate: true);
+        $this->redirectAfterLinking();
+    }
+
+    protected function redirectAfterLinking(): void
+    {
+        if (request()->hasSession()) {
+            $this->redirectIntended(default: route('alumno.carreras', absolute: false), navigate: true);
+
+            return;
+        }
+
+        $this->redirectRoute('alumno.carreras', navigate: true);
     }
 
     protected function updateCurrentUser(User $user, string $documento, object $alumno): User
@@ -123,19 +134,45 @@ new #[Layout('layouts.app')] class extends Component
             ]);
         }
 
+        $oauthProvider = $oauthUser->auth_provider;
+        $oauthProviderId = $oauthUser->auth_provider_id;
+        $oauthAvatar = $oauthUser->avatar;
+
+        $this->releaseOauthUserUniqueClaimsIfNeeded($oauthUser, $existingStudent, $email);
+
         $existingStudent->forceFill([
             'name' => $this->resolveAlumnoName($alumno, $existingStudent->name),
             'email' => $email,
             'documento' => $documento,
-            'auth_provider' => $oauthUser->auth_provider,
-            'auth_provider_id' => $oauthUser->auth_provider_id,
-            'avatar' => $oauthUser->avatar ?: $existingStudent->avatar,
+            'auth_provider' => $oauthProvider,
+            'auth_provider_id' => $oauthProviderId,
+            'avatar' => $oauthAvatar ?: $existingStudent->avatar,
             'email_verified_at' => $existingStudent->email_verified_at ?: now(),
         ])->save();
 
         $this->ensureAlumnoRole($existingStudent);
 
         return $existingStudent;
+    }
+
+    protected function releaseOauthUserUniqueClaimsIfNeeded(User $oauthUser, User $existingStudent, string $email): void
+    {
+        if ($oauthUser->is($existingStudent) || $oauthUser->email !== $email) {
+            $shouldReleaseEmail = false;
+        } else {
+            $shouldReleaseEmail = true;
+        }
+
+        $attributes = [
+            'auth_provider' => null,
+            'auth_provider_id' => null,
+        ];
+
+        if ($shouldReleaseEmail) {
+            $attributes['email'] = sprintf('oauth-link-%s@pending.invalid', $oauthUser->id);
+        }
+
+        $oauthUser->forceFill($attributes)->save();
     }
 
     protected function ensureAlumnoRole(User $user): void

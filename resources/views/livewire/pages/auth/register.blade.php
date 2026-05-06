@@ -4,9 +4,11 @@ use App\Models\User;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rules;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
+use Spatie\Permission\Models\Role;
 
 new #[Layout('layouts.guest')] class extends Component
 {
@@ -20,20 +22,99 @@ new #[Layout('layouts.guest')] class extends Component
     {
         $validated = $this->validate([
             'name' => ['required', 'string', 'max:255'],
-            'documento' => ['required', 'string', 'max:20', 'unique:'.User::class],
-            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
+            'documento' => ['required', 'string', 'max:20'],
+            'email' => ['required', 'string', 'lowercase', 'email', 'max:255'],
             'password' => ['required', 'string', 'confirmed', Rules\Password::defaults()],
         ]);
 
+        $validated['documento'] = $this->normalizeDocumento($validated['documento']);
+        $validated['email'] = Str::lower($validated['email']);
+
+        if ($validated['documento'] === '') {
+            $this->addError('documento', 'Ingresá una cédula válida.');
+
+            return;
+        }
+
         $validated['password'] = Hash::make($validated['password']);
 
-        event(new Registered($user = User::create($validated)));
+        $user = $this->registerOrClaimUser($validated);
 
-        $user->assignRole('ALUMNO');
+        if (! $user) {
+            return;
+        }
+
+        Role::findOrCreate('ALUMNO', 'web');
+
+        event(new Registered($user));
+
+        if (! $user->hasRole('ALUMNO')) {
+            $user->assignRole('ALUMNO');
+        }
 
         Auth::login($user);
 
         $this->redirect(route('dashboard', absolute: false), navigate: true);
+    }
+
+    /**
+     * @param  array{name: string, documento: string, email: string, password: string, password_confirmation: string}  $validated
+     */
+    protected function registerOrClaimUser(array $validated): ?User
+    {
+        $existingUser = User::query()->firstWhere('documento', $validated['documento']);
+
+        $emailConflict = User::query()
+            ->where('email', $validated['email'])
+            ->when($existingUser, fn ($query) => $query->whereKeyNot($existingUser->getKey()))
+            ->exists();
+
+        if ($emailConflict) {
+            $this->addError('email', 'Ese correo ya está asociado a otra cuenta.');
+
+            return null;
+        }
+
+        if (! $existingUser) {
+            return User::query()->create($validated);
+        }
+
+        if (! $this->canClaimExistingUser($existingUser)) {
+            $this->addError('documento', 'Ya existe una cuenta para esa cédula. Iniciá sesión o recuperá tu contraseña.');
+
+            return null;
+        }
+
+        $existingUser->forceFill([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => $validated['password'],
+            'email_verified_at' => null,
+        ])->save();
+
+        return $existingUser;
+    }
+
+    protected function canClaimExistingUser(User $user): bool
+    {
+        return blank($user->auth_provider)
+            && $this->usesPlaceholderEmail($user->email);
+    }
+
+    protected function usesPlaceholderEmail(string $email): bool
+    {
+        return Str::endsWith(Str::lower($email), ['@consultor.invalid', '@pending.invalid']);
+    }
+
+    protected function normalizeDocumento(string $documento): string
+    {
+        $normalizedDocumento = preg_replace('/\D+/', '', trim($documento));
+
+        if ($normalizedDocumento === null || $normalizedDocumento === '') {
+            return trim($documento);
+        }
+
+        return $normalizedDocumento;
     }
 }; ?>
 

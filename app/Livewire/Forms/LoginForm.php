@@ -12,7 +12,7 @@ use Livewire\Form;
 
 class LoginForm extends Form
 {
-    #[Validate('required|string|email')]
+    #[Validate('required|string|max:255')]
     public string $email = '';
 
     #[Validate('required|string')]
@@ -30,7 +30,7 @@ class LoginForm extends Form
     {
         $this->ensureIsNotRateLimited();
 
-        if (! Auth::attempt($this->only(['email', 'password']), $this->remember)) {
+        if (! Auth::attempt($this->credentials(), $this->remember)) {
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([
@@ -67,6 +67,42 @@ class LoginForm extends Form
      */
     protected function throttleKey(): string
     {
-        return Str::transliterate(Str::lower($this->email).'|'.request()->ip());
+        return Str::transliterate(Str::lower($this->loginIdentifier()).'|'.request()->ip());
+    }
+
+    /**
+     * @return array{email?: string, documento?: string, password: string}
+     */
+    protected function credentials(): array
+    {
+        $identifier = $this->loginIdentifier();
+
+        if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
+            return [
+                'email' => $identifier,
+                'password' => $this->password,
+            ];
+        }
+
+        return [
+            'documento' => $this->normalizeDocumento($identifier),
+            'password' => $this->password,
+        ];
+    }
+
+    protected function loginIdentifier(): string
+    {
+        return trim($this->email);
+    }
+
+    protected function normalizeDocumento(string $documento): string
+    {
+        $normalizedDocumento = preg_replace('/\D+/', '', trim($documento));
+
+        if ($normalizedDocumento === null || $normalizedDocumento === '') {
+            return trim($documento);
+        }
+
+        return $normalizedDocumento;
     }
 }

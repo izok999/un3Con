@@ -68,7 +68,7 @@ class LegacyAlumnoLoginForm extends Form
             [
                 'name' => $this->resolveAlumnoName($alumno),
                 'email' => sprintf('alumno-%s@consultor.invalid', $documento),
-                'email_verified_at' => now(),
+                'email_verified_at' => null,
                 'password' => Str::random(40),
             ],
         );

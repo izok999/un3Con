@@ -13,13 +13,26 @@ use Throwable;
 
 class OAuthController extends Controller
 {
+    protected const GOOGLE_LINK_EXISTING_INTENT = 'link-existing';
+
     public function redirectToGoogle(): RedirectResponse
     {
+        session()->forget('auth.google.intent');
+
+        return Socialite::driver('google')->redirect();
+    }
+
+    public function redirectExistingAccountToGoogle(): RedirectResponse
+    {
+        session(['auth.google.intent' => self::GOOGLE_LINK_EXISTING_INTENT]);
+
         return Socialite::driver('google')->redirect();
     }
 
     public function handleGoogleCallback(): RedirectResponse
     {
+        $intent = (string) session()->pull('auth.google.intent', '');
+
         try {
             $socialUser = Socialite::driver('google')->user();
         } catch (Throwable $exception) {
@@ -40,13 +53,22 @@ class OAuthController extends Controller
             ->where('auth_provider_id', $providerId)
             ->first();
 
-        $emailConflict = User::query()
+        $existingUserWithEmail = User::query()
             ->where('email', $email)
             ->when($user, fn ($query) => $query->whereKeyNot($user->getKey()))
-            ->exists();
+            ->first();
 
-        if ($emailConflict) {
-            return $this->redirectToLoginWithOAuthError('Ese correo ya está asociado a otra cuenta. Ingresá con tu método actual para evitar un enlace incorrecto.');
+        if ($existingUserWithEmail) {
+            $user = $this->resolveEmailConflict(
+                existingUserWithEmail: $existingUserWithEmail,
+                linkedUser: $user,
+                providerId: $providerId,
+                intent: $intent,
+            );
+
+            if (! $user) {
+                return $this->redirectToLoginWithOAuthError('Ese correo ya está asociado a otra cuenta. Usá el botón "Vincular cuenta existente con Google" para enlazarla de forma segura.');
+            }
         }
 
         $attributes = [
@@ -54,19 +76,17 @@ class OAuthController extends Controller
             'email' => $email,
             'avatar' => $socialUser->getAvatar(),
             'email_verified_at' => now(),
+            'auth_provider' => 'google',
+            'auth_provider_id' => $providerId,
         ];
 
-        if (! $user) {
+        if ($user) {
+            $user->forceFill($attributes)->save();
+        } else {
             $attributes['password'] = null;
-        }
 
-        $user = User::query()->updateOrCreate(
-            [
-                'auth_provider' => 'google',
-                'auth_provider_id' => $providerId,
-            ],
-            $attributes,
-        );
+            $user = User::query()->create($attributes);
+        }
 
         Auth::login($user, remember: true);
         request()->session()->regenerate();
@@ -98,6 +118,34 @@ class OAuthController extends Controller
         return redirect()
             ->route('login')
             ->withErrors(['oauth' => $message]);
+    }
+
+    protected function resolveEmailConflict(
+        User $existingUserWithEmail,
+        ?User $linkedUser,
+        string $providerId,
+        string $intent,
+    ): ?User {
+        if ($linkedUser) {
+            return $linkedUser->is($existingUserWithEmail) ? $linkedUser : null;
+        }
+
+        if ($intent !== self::GOOGLE_LINK_EXISTING_INTENT) {
+            return null;
+        }
+
+        if (filled($existingUserWithEmail->auth_provider) && $existingUserWithEmail->auth_provider !== 'google') {
+            return null;
+        }
+
+        if (
+            filled($existingUserWithEmail->auth_provider_id)
+            && $existingUserWithEmail->auth_provider_id !== $providerId
+        ) {
+            return null;
+        }
+
+        return $existingUserWithEmail;
     }
 
     protected function resolveUserName(SocialiteUser $socialUser): string
