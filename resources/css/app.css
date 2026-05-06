@@ -108,7 +108,7 @@
         background-color: #16181f;
         background-image:
             url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='1' cy='1' r='1' fill='%23ffffff' fill-opacity='0.04'/%3E%3C/svg%3E"),
-            linear-gradient(135deg, #1a2e12 0%, #1e2814 45%, #2a1a05 100%);
+            linear-gradient(135deg, #1a2e12 0%, #1e2814 45%, #0d2a05 100%);
     }
 }
 

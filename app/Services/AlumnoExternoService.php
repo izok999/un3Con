@@ -266,15 +266,26 @@ class AlumnoExternoService
      */
     public function extractoPorHabilitacion(int $aluId, int $halId): Collection
     {
-        try {
-            return $this->queryExtractoPorHabilitacion($aluId, $halId)->values();
-        } catch (QueryException) {
-            return $this->filterByFirstAvailableField(
-                $this->extractoAcademico($aluId),
-                $halId,
-                ['aci_idhal', 'act_idhal', 'hal_id'],
-            )->values();
-        }
+        $cacheKey = "alumno_{$aluId}_extracto_hal_{$halId}";
+
+        $data = Cache::remember($cacheKey, 900, function () use ($aluId, $halId): array {
+            try {
+                return $this->queryExtractoPorHabilitacion($aluId, $halId)
+                    ->values()
+                    ->map(fn ($row) => (array) $row)
+                    ->all();
+            } catch (QueryException) {
+                return $this->filterByFirstAvailableField(
+                    $this->extractoAcademico($aluId),
+                    $halId,
+                    ['aci_idhal', 'act_idhal', 'hal_id'],
+                )->values()
+                    ->map(fn ($row) => (array) $row)
+                    ->all();
+            }
+        });
+
+        return collect($data)->map(fn (array $row) => (object) $row)->values();
     }
 
     protected function queryExtractoPorHabilitacion(int $aluId, int $halId): Collection
@@ -305,29 +316,40 @@ class AlumnoExternoService
      */
     public function materiasPorHabilitacion(int $aluId, int $halId, ?int $rscId = null): Collection
     {
-        if ($rscId !== null) {
-            try {
-                return $this->queryMateriasPorRecurso($aluId, $rscId)->values();
-            } catch (QueryException) {
-                // Fallback for external schemas that still expose a different resource field name.
+        $cacheKey = "alumno_{$aluId}_materias_{$halId}_".($rscId ?? 'x');
+
+        $data = Cache::remember($cacheKey, 900, function () use ($aluId, $halId, $rscId): array {
+            if ($rscId !== null) {
+                try {
+                    return $this->queryMateriasPorRecurso($aluId, $rscId)
+                        ->values()
+                        ->map(fn ($row) => (array) $row)
+                        ->all();
+                } catch (QueryException) {
+                    // Fallback for external schemas that still expose a different resource field name.
+                }
             }
-        }
 
-        $materias = $this->materiasInscriptas($aluId);
+            $materias = $this->materiasInscriptas($aluId);
 
-        if ($rscId !== null) {
-            $materias = $this->filterByFirstAvailableField(
+            if ($rscId !== null) {
+                $materias = $this->filterByFirstAvailableField(
+                    $materias,
+                    $rscId,
+                    ['inm_idrsc', 'imi_idrsc', 'hal_idrsc'],
+                );
+            }
+
+            return $this->filterByFirstAvailableField(
                 $materias,
-                $rscId,
-                ['inm_idrsc', 'imi_idrsc', 'hal_idrsc'],
-            );
-        }
+                $halId,
+                ['imi_idhal', 'inm_idhal', 'hal_id'],
+            )->values()
+                ->map(fn ($row) => (array) $row)
+                ->all();
+        });
 
-        return $this->filterByFirstAvailableField(
-            $materias,
-            $halId,
-            ['imi_idhal', 'inm_idhal', 'hal_id'],
-        )->values();
+        return collect($data)->map(fn (array $row) => (object) $row)->values();
     }
 
     protected function queryMateriasPorRecurso(int $aluId, int $rscId): Collection
@@ -357,25 +379,36 @@ class AlumnoExternoService
      */
     public function deudasPorHabilitacion(int $aluId, int $rscId, ?int $periodoId = null): Collection
     {
-        try {
-            return $this->queryDeudasPorHabilitacion($aluId, $rscId, $periodoId)->values();
-        } catch (QueryException) {
-            $deudas = $this->filterByFirstAvailableField(
-                $this->deudas($aluId),
-                $rscId,
-                ['dit_idrsc', 'deu_idrsc', 'rsc_id', 'hal_idrsc'],
-            );
+        $cacheKey = "alumno_{$aluId}_deudas_{$rscId}_".($periodoId ?? 'x');
 
-            if ($periodoId !== null) {
+        $data = Cache::remember($cacheKey, 300, function () use ($aluId, $rscId, $periodoId): array {
+            try {
+                return $this->queryDeudasPorHabilitacion($aluId, $rscId, $periodoId)
+                    ->values()
+                    ->map(fn ($row) => (array) $row)
+                    ->all();
+            } catch (QueryException) {
                 $deudas = $this->filterByFirstAvailableField(
-                    $deudas,
-                    $periodoId,
-                    ['dit_idple', 'deu_idple', 'ple_id', 'hal_idple'],
+                    $this->deudas($aluId),
+                    $rscId,
+                    ['dit_idrsc', 'deu_idrsc', 'rsc_id', 'hal_idrsc'],
                 );
-            }
 
-            return $deudas->values();
-        }
+                if ($periodoId !== null) {
+                    $deudas = $this->filterByFirstAvailableField(
+                        $deudas,
+                        $periodoId,
+                        ['dit_idple', 'deu_idple', 'ple_id', 'hal_idple'],
+                    );
+                }
+
+                return $deudas->values()
+                    ->map(fn ($row) => (array) $row)
+                    ->all();
+            }
+        });
+
+        return collect($data)->map(fn (array $row) => (object) $row)->values();
     }
 
     protected function queryDeudasPorHabilitacion(int $aluId, int $rscId, ?int $periodoId = null): Collection
@@ -407,25 +440,33 @@ class AlumnoExternoService
      */
     public function asistenciaPorHabilitacion(int $aluId, int $rscId, ?int $periodoId = null): Collection
     {
-        try {
-            $asistencias = $this->queryAsistenciaPorRecurso($aluId, $rscId);
-        } catch (QueryException) {
-            $asistencias = $this->filterByFirstAvailableField(
-                $this->asistencia($aluId),
-                $rscId,
-                ['aal_idrsc', 'aai_idrsc', 'rsc_id', 'hal_idrsc'],
-            );
-        }
+        $cacheKey = "alumno_{$aluId}_asistencia_{$rscId}_".($periodoId ?? 'x');
 
-        if ($periodoId !== null) {
-            $asistencias = $this->filterByFirstAvailableField(
-                $asistencias,
-                $periodoId,
-                ['aal_idple', 'aai_idple', 'ple_id', 'hal_idple'],
-            );
-        }
+        $data = Cache::remember($cacheKey, 900, function () use ($aluId, $rscId, $periodoId): array {
+            try {
+                $asistencias = $this->queryAsistenciaPorRecurso($aluId, $rscId);
+            } catch (QueryException) {
+                $asistencias = $this->filterByFirstAvailableField(
+                    $this->asistencia($aluId),
+                    $rscId,
+                    ['aal_idrsc', 'aai_idrsc', 'rsc_id', 'hal_idrsc'],
+                );
+            }
 
-        return $asistencias->values();
+            if ($periodoId !== null) {
+                $asistencias = $this->filterByFirstAvailableField(
+                    $asistencias,
+                    $periodoId,
+                    ['aal_idple', 'aai_idple', 'ple_id', 'hal_idple'],
+                );
+            }
+
+            return $asistencias->values()
+                ->map(fn ($row) => (array) $row)
+                ->all();
+        });
+
+        return collect($data)->map(fn (array $row) => (object) $row)->values();
     }
 
     protected function queryAsistenciaPorRecurso(int $aluId, int $rscId): Collection
@@ -442,10 +483,16 @@ class AlumnoExternoService
      */
     public function evaluaciones(int $halId): Collection
     {
-        return $this->query()
-            ->table('sh_movimientos.vw_evaluaciones_puntajes_item_14')
-            ->where('epi_idhal', $halId)
-            ->get();
+        $data = Cache::remember("alumno_hal_{$halId}_evaluaciones", 900, function () use ($halId): array {
+            return $this->query()
+                ->table('sh_movimientos.vw_evaluaciones_puntajes_item_14')
+                ->where('epi_idhal', $halId)
+                ->get()
+                ->map(fn ($row) => (array) $row)
+                ->all();
+        });
+
+        return collect($data)->map(fn (array $row) => (object) $row)->values();
     }
 
     /**
