@@ -170,7 +170,7 @@ new #[Layout('layouts.guest')] class extends Component
     <!-- Separador -->
     <div class="divider text-sm text-base-content/50 my-6">o</div>
 
-    <!-- Registro con Google -->
+    <!-- Registro con Google 
     <a href="{{ route('auth.google.redirect') }}"
        class="btn btn-outline w-full gap-2">
         <svg class="w-5 h-5" viewBox="0 0 24 24">
@@ -180,7 +180,7 @@ new #[Layout('layouts.guest')] class extends Component
             <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
         </svg>
         Registrarse con Google
-    </a>
+    </a> -->
 
     <p class="text-center text-sm mt-6 text-base-content/60">
         ¿Ya tenés cuenta?
