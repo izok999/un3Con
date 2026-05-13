@@ -314,11 +314,19 @@ class AlumnoExternoService
      */
     public function extractoImpresionPorHabilitacion(int $aluId, int $halId): Collection
     {
-        try {
-            return $this->queryExtractoPorFuncionYHabilitacion($aluId, $halId);
-        } catch (QueryException) {
-            return $this->extractoPorHabilitacion($aluId, $halId);
-        }
+        $data = Cache::remember("extracto_impresion_{$aluId}_{$halId}", 900, function () use ($aluId, $halId): array {
+            try {
+                return $this->queryExtractoPorFuncionYHabilitacion($aluId, $halId)
+                    ->map(fn ($row) => (array) $row)
+                    ->all();
+            } catch (QueryException) {
+                return $this->extractoPorHabilitacion($aluId, $halId)
+                    ->map(fn ($row) => (array) $row)
+                    ->all();
+            }
+        });
+
+        return collect($data)->map(fn (array $row) => (object) $row)->values();
     }
 
     protected function queryExtractoPorFuncion(int $aluId): Collection
