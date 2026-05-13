@@ -28,23 +28,51 @@ class LoginForm extends Form
      */
     public function authenticate(): void
     {
-        $this->ensureIsNotRateLimited();
-
-        if (! Auth::attempt($this->credentials(), $this->remember)) {
-            RateLimiter::hit($this->throttleKey());
-
-            throw ValidationException::withMessages([
-                'form.email' => trans('auth.failed'),
-            ]);
+        if (! $this->attemptAuthentication()) {
+            $this->throwFailedAuthentication();
         }
 
+        $this->clearRateLimit();
+    }
+
+    public function attemptAuthentication(): bool
+    {
+        $this->ensureIsNotRateLimited();
+
+        return Auth::attempt($this->credentials(), $this->remember);
+    }
+
+    public function clearRateLimit(): void
+    {
         RateLimiter::clear($this->throttleKey());
+    }
+
+    /**
+     * @throws ValidationException
+     */
+    public function throwFailedAuthentication(): never
+    {
+        RateLimiter::hit($this->throttleKey());
+
+        throw ValidationException::withMessages([
+            'form.email' => trans('auth.failed'),
+        ]);
+    }
+
+    public function usesEmailIdentifier(): bool
+    {
+        return filter_var($this->loginIdentifier(), FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    public function normalizedDocumento(): string
+    {
+        return $this->normalizeDocumento($this->loginIdentifier());
     }
 
     /**
      * Ensure the authentication request is not rate limited.
      */
-    protected function ensureIsNotRateLimited(): void
+    public function ensureIsNotRateLimited(): void
     {
         if (! RateLimiter::tooManyAttempts($this->throttleKey(), 5)) {
             return;
@@ -77,7 +105,7 @@ class LoginForm extends Form
     {
         $identifier = $this->loginIdentifier();
 
-        if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
+        if ($this->usesEmailIdentifier()) {
             return [
                 'email' => $identifier,
                 'password' => $this->password,

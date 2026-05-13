@@ -34,7 +34,7 @@ new #[Lazy] class extends Component
 <div class="card glass-card">
     <div class="card-body">
         <h2 class="mb-1 text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Periodo actual</h2>
-        <h3 class="card-title text-base text-base-content">Materias inscriptas</h3>
+        <h3 class="card-title text-base text-base-content">Materias actuales</h3>
 
         @if($materias->isEmpty())
             <x-mary-alert title="No hay materias vigentes para esta carrera." icon="o-information-circle" class="alert-info mt-2" />

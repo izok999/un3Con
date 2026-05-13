@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\AlumnoExternoService;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Lazy;
 use Livewire\Volt\Component;
@@ -18,7 +19,15 @@ new #[Lazy] class extends Component
     public function mount(int $halId, AlumnoExternoService $service): void
     {
         $this->halId = $halId;
-        $this->evaluaciones = $service->evaluaciones($halId);
+        $this->evaluaciones = $service->evaluaciones($halId)
+            ->sortByDesc(function (object $evaluacion): int {
+                if (blank($evaluacion->evp_fecha ?? null)) {
+                    return 0;
+                }
+
+                return Carbon::createFromFormat('d/m/Y', $evaluacion->evp_fecha)->timestamp;
+            })
+            ->values();
     }
 
     public function placeholder(): string
@@ -30,7 +39,7 @@ new #[Lazy] class extends Component
 <div class="card glass-card">
     <div class="card-body">
         <h2 class="mb-1 text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Parciales y finales</h2>
-        <h3 class="card-title text-base text-base-content">Evaluaciones</h3>
+        <h3 class="card-title text-base text-base-content">Ultimas evaluaciones</h3>
 
         @if($evaluaciones->isEmpty())
             <x-mary-alert title="Todavía no hay evaluaciones registradas para esta carrera." icon="o-information-circle" class="alert-info mt-2" />
