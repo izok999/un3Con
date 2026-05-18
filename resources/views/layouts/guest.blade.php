@@ -18,6 +18,11 @@
                     class="absolute inset-0 w-full h-full pointer-events-none"
                     style="z-index:0"></canvas>
 
+            {{-- Selector de idioma --}}
+            <div class="absolute top-4 right-4" style="z-index:2">
+                <x-locale-switcher />
+            </div>
+
             {{-- Logo --}}
             <div class="mb-4 relative" style="z-index:1">
                 <a href="/" wire:navigate>

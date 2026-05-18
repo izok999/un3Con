@@ -126,6 +126,9 @@
                         <span class="text-lg font-semibold">{{ $header ?? '' }}</span>
                     </div>
                     <div class="flex-none gap-2">
+                        {{-- Selector de idioma --}}
+                        <x-locale-switcher />
+
                         {{-- Toggle modo oscuro --}}
                         <label class="swap swap-rotate btn btn-ghost btn-sm">
                             <input type="checkbox" id="theme-toggle" />
