@@ -85,7 +85,7 @@ new #[Layout('layouts.guest')] class extends Component
 }; ?>
 
 <div>
-    <h2 class="text-2xl font-bold text-center mb-6 text-base-content">Iniciar sesión</h2>
+    <h2 class="text-2xl font-bold text-center mb-6 text-base-content">{{ __('Iniciar sesión') }}</h2>
 
     <!-- Session Status -->
     <x-auth-session-status class="mb-4" :status="session('status')" />
@@ -97,16 +97,16 @@ new #[Layout('layouts.guest')] class extends Component
     <form wire:submit="login">
         <!-- Email / Documento -->
         <div class="form-control w-full">
-            <label class="label"><span class="label-text font-medium">Correo o documento</span></label>
+            <label class="label"><span class="label-text font-medium">{{ __('Correo o documento') }}</span></label>
             <input wire:model="form.email" id="email" type="text"
                    class="input input-bordered w-full"
-                   required autofocus autocomplete="username" placeholder="tu@email.com o 1234567" />
+                   required autofocus autocomplete="username" placeholder="{{ __('tu@email.com o 1234567') }}" />
             <x-input-error :messages="$errors->get('form.email')" class="mt-1" />
         </div>
 
         <!-- Password -->
         <div class="form-control w-full mt-4">
-            <label class="label"><span class="label-text font-medium">Contraseña o PIN</span></label>
+            <label class="label"><span class="label-text font-medium">{{ __('Contraseña o PIN') }}</span></label>
             <input wire:model="form.password" id="password" type="password"
                    class="input input-bordered w-full"
                    required autocomplete="current-password" />
@@ -114,30 +114,30 @@ new #[Layout('layouts.guest')] class extends Component
         </div>
 
         <div class="rounded-box border border-base-300 bg-base-200/40 p-4 mt-4 text-sm text-base-content/80">
-            Podés entrar con tu correo y contraseña, o con tu documento usando tu contraseña local o el PIN del consultor anterior.
+            {{ __('Podés entrar con tu correo y contraseña, o con tu documento usando tu contraseña local o el PIN del consultor anterior.') }}
         </div>
 
         <!-- Remember + Forgot -->
         <div class="flex items-center justify-between mt-4">
             <label class="label cursor-pointer gap-2">
                 <input wire:model="form.remember" type="checkbox" class="checkbox checkbox-primary checkbox-sm" />
-                <span class="label-text text-sm">Recordarme</span>
+                <span class="label-text text-sm">{{ __('Recordarme') }}</span>
             </label>
 
             @if (Route::has('password.request'))
                 <a class="text-sm text-primary hover:underline" href="{{ route('password.request') }}" wire:navigate>
-                    ¿Olvidaste tu contraseña?
+                    {{ __('¿Olvidaste tu contraseña?') }}
                 </a>
             @endif
         </div>
 
         <button type="submit" class="btn btn-primary w-full mt-6">
-            <span wire:loading.remove wire:target="login">Acceder</span>
+            <span wire:loading.remove wire:target="login">{{ __('Acceder') }}</span>
             <span wire:loading wire:target="login" class="loading loading-spinner loading-sm"></span>
         </button>
     </form>
 
-    <div class="divider text-sm text-base-content/50 my-6">o</div>
+    <div class="divider text-sm text-base-content/50 my-6">{{ __('o') }}</div>
 
     <!-- Login con Google -->
     <a href="{{ route('auth.google.redirect') }}"
@@ -148,15 +148,15 @@ new #[Layout('layouts.guest')] class extends Component
             <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
             <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
         </svg>
-        Ingresar con Google
+        {{ __('Ingresar con Google') }}
     </a>
 
     <p class="text-sm text-base-content/70 mt-3 text-center">
-        Si tu cuenta local ya usa el mismo correo que Google, la vamos a enlazar automáticamente. Si es tu primer ingreso con Google, después te vamos a pedir tu cédula para enlazar tu cuenta de alumno.
+        {{ __('Si tu cuenta local ya usa el mismo correo que Google, la vamos a enlazar automáticamente. Si es tu primer ingreso con Google, después te vamos a pedir tu cédula para enlazar tu cuenta de alumno.') }}
     </p>
 
     <p class="text-center text-sm mt-6 text-base-content/60">
-        ¿No tenés cuenta?
-        <a href="{{ route('register') }}" class="text-primary font-medium hover:underline" wire:navigate>Registrate</a>
+        {{ __('¿No tenés cuenta?') }}
+        <a href="{{ route('register') }}" class="text-primary font-medium hover:underline" wire:navigate>{{ __('Registrate') }}</a>
     </p>
 </div>
