@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
@@ -10,6 +11,18 @@ Route::get('/', function () {
         ? redirect()->route('dashboard')
         : redirect()->route('login');
 });
+
+// Cambio de idioma — accesible para usuarios autenticados y guests
+Route::post('/locale', function (Request $request) {
+    $supported = ['es', 'en', 'pt', 'gn'];
+    $locale = $request->input('locale');
+
+    if (in_array($locale, $supported, strict: true)) {
+        session(['locale' => $locale]);
+    }
+
+    return back();
+})->name('locale.switch');
 
 // Bienvenida — solo ADMIN o FUNCIONARIO
 Route::get('/bienvenida', fn () => view('welcome'))

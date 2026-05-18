@@ -63,11 +63,10 @@ class OAuthController extends Controller
                 existingUserWithEmail: $existingUserWithEmail,
                 linkedUser: $user,
                 providerId: $providerId,
-                intent: $intent,
             );
 
             if (! $user) {
-                return $this->redirectToLoginWithOAuthError('Ese correo ya está asociado a otra cuenta. Usá el botón "Vincular cuenta existente con Google" para enlazarla de forma segura.');
+                return $this->redirectToLoginWithOAuthError('Ese correo ya está asociado a otra cuenta y no se pudo vincular automáticamente con Google. Ingresá primero con tu cuenta y vinculá Google desde tu perfil.');
             }
         }
 
@@ -124,14 +123,9 @@ class OAuthController extends Controller
         User $existingUserWithEmail,
         ?User $linkedUser,
         string $providerId,
-        string $intent,
     ): ?User {
         if ($linkedUser) {
             return $linkedUser->is($existingUserWithEmail) ? $linkedUser : null;
-        }
-
-        if ($intent !== self::GOOGLE_LINK_EXISTING_INTENT) {
-            return null;
         }
 
         if (filled($existingUserWithEmail->auth_provider) && $existingUserWithEmail->auth_provider !== 'google') {

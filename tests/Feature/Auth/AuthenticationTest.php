@@ -24,7 +24,8 @@ class AuthenticationTest extends TestCase
             ->assertOk()
             ->assertSeeVolt('pages.auth.login')
             ->assertSee('Correo o documento')
-            ->assertSee('Vincular cuenta existente con Google');
+            ->assertSee('Contraseña o PIN')
+            ->assertDontSee('Vincular cuenta existente con Google');
     }
 
     public function test_users_can_authenticate_using_the_login_screen(): void
@@ -100,10 +101,10 @@ class AuthenticationTest extends TestCase
         $this->app->instance(AlumnoExternoService::class, $service);
 
         $component = Volt::test('pages.auth.login')
-            ->set('legacyForm.documento', '1234567')
-            ->set('legacyForm.pin', '4321');
+            ->set('form.email', '1234567')
+            ->set('form.password', '4321');
 
-        $component->call('loginAlumno');
+        $component->call('login');
 
         $component
             ->assertHasNoErrors()
@@ -144,10 +145,10 @@ class AuthenticationTest extends TestCase
         $this->app->instance(AlumnoExternoService::class, $service);
 
         $component = Volt::test('pages.auth.login')
-            ->set('legacyForm.documento', '1234567')
-            ->set('legacyForm.pin', '4321');
+            ->set('form.email', '1234567')
+            ->set('form.password', '4321');
 
-        $component->call('loginAlumno');
+        $component->call('login');
 
         $component
             ->assertHasNoErrors()
@@ -168,13 +169,13 @@ class AuthenticationTest extends TestCase
         $this->app->instance(AlumnoExternoService::class, $service);
 
         $component = Volt::test('pages.auth.login')
-            ->set('legacyForm.documento', '1234567')
-            ->set('legacyForm.pin', 'wrong-pin');
+            ->set('form.email', '1234567')
+            ->set('form.password', 'wrong-pin');
 
-        $component->call('loginAlumno');
+        $component->call('login');
 
         $component
-            ->assertHasErrors(['legacyForm.documento'])
+            ->assertHasErrors(['form.email'])
             ->assertNoRedirect();
 
         $this->assertGuest();

@@ -75,13 +75,41 @@ class OAuthAuthenticationTest extends TestCase
         $this->assertAuthenticatedAs($user);
     }
 
-    public function test_google_login_is_rejected_when_email_already_belongs_to_another_account(): void
+    public function test_google_login_automatically_links_existing_local_account_with_same_email(): void
     {
-        User::factory()->create([
+        $user = User::factory()->create([
             'email' => 'isaacbritez99@gmail.com',
             'documento' => '1234567',
             'auth_provider' => null,
             'auth_provider_id' => null,
+        ]);
+
+        Socialite::fake('google', $this->fakeGoogleUser(
+            id: 'google-999',
+            name: 'Isaac Britez',
+            email: 'isaacbritez99@gmail.com',
+            avatar: 'https://example.com/avatar.jpg',
+        ));
+
+        $response = $this->get(route('auth.google.callback'));
+
+        $response->assertRedirect(route('alumno.carreras'));
+
+        $user->refresh();
+
+        $this->assertSame('google', $user->auth_provider);
+        $this->assertSame('google-999', $user->auth_provider_id);
+        $this->assertAuthenticatedAs($user);
+        $this->assertSame(1, User::query()->count());
+    }
+
+    public function test_google_login_is_rejected_when_email_belongs_to_different_linked_provider_account(): void
+    {
+        User::factory()->create([
+            'email' => 'isaacbritez99@gmail.com',
+            'documento' => '1234567',
+            'auth_provider' => 'facebook',
+            'auth_provider_id' => 'facebook-123',
         ]);
 
         Socialite::fake('google', $this->fakeGoogleUser(

@@ -95,38 +95,82 @@ new #[Layout('layouts.app')] class extends Component
                 lazy
             />
 
-            {{-- Materias + Evaluaciones + Asistencia + Deudas: cada una carga de forma independiente --}}
-            <div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
+            <section class="space-y-3">
+                <div class="grid grid-cols-1 gap-6 xl:grid-cols-2" data-testid="detalle-carrera-periodo-seguimiento-headings">
+                    <div class="space-y-1">
+                        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Periodo vigente</p>
+                        <h2 class="text-lg font-semibold text-base-content">Materias actuales y su asistencia respectiva</h2>
+                    </div>
+                    <div class="space-y-1">
+                        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Seguimiento reciente</p>
+                        <h2 class="text-lg font-semibold text-base-content">Ultimas evaluaciones y sus calificaciones</h2>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
+                    <livewire:alumno.detalle-carrera.asistencias
+                        :alu-id="(int) $alumno->alu_id"
+                        :rsc-id="(int) $carrera->hal_idrsc"
+                        :periodo-id="(int) $carrera->hal_idple"
+                        lazy
+                    />
+
+                    <section class="space-y-3">
+                        <livewire:alumno.detalle-carrera.evaluaciones
+                            :hal-id="(int) $carrera->hal_id"
+                            lazy
+                        />
+                    </section>
+                </div>
+
                 <livewire:alumno.detalle-carrera.materias
                     :alu-id="(int) $alumno->alu_id"
                     :hal-id="(int) $carrera->hal_id"
                     :rsc-id="(int) $carrera->hal_idrsc"
                     lazy
                 />
-                <livewire:alumno.detalle-carrera.evaluaciones
-                    :hal-id="(int) $carrera->hal_id"
-                    lazy
-                />
-                <livewire:alumno.detalle-carrera.asistencias
-                    :alu-id="(int) $alumno->alu_id"
-                    :rsc-id="(int) $carrera->hal_idrsc"
-                    :periodo-id="(int) $carrera->hal_idple"
-                    lazy
-                />
+            </section>
+
+            <section class="space-y-3">
+                <div class="space-y-1">
+                    <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Estado financiero</p>
+                    <h2 class="text-lg font-semibold text-base-content">Pagos y deudas en orden cronologico</h2>
+                </div>
+
                 <livewire:alumno.detalle-carrera.deudas
                     :alu-id="(int) $alumno->alu_id"
                     :rsc-id="(int) $carrera->hal_idrsc"
                     :periodo-id="(int) $carrera->hal_idple"
                     lazy
                 />
-            </div>
+            </section>
 
-            {{-- Extracto académico: ancho completo, carga de forma independiente --}}
-            <livewire:alumno.detalle-carrera.extracto
-                :alu-id="(int) $alumno->alu_id"
-                :hal-id="(int) $carrera->hal_id"
-                lazy
-            />
+            <section class="space-y-3">
+                <div class="space-y-1">
+                    <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Trayectoria completa</p>
+                    <h2 class="text-lg font-semibold text-base-content">Materias pendientes en la carrera</h2>
+                </div>
+
+                <livewire:alumno.detalle-carrera.pendientes
+                    :alu-id="(int) $alumno->alu_id"
+                    :hal-id="(int) $carrera->hal_id"
+                    :car-id="(int) ($carrera->car_id ?? 0)"
+                    :rsc-id="(int) $carrera->hal_idrsc"
+                    lazy
+                />
+            </section>
+<!-- La carga del extracto es lenta por lo tanto la ubicamos al fondo  -->
+            <section class="space-y-3">
+                <div class="space-y-1">
+                    <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Progreso de la carrera</p>
+                    <h2 class="text-lg font-semibold text-base-content">Resumen académico</h2>
+                </div>
+
+                <livewire:alumno.detalle-carrera.extracto
+                    :alu-id="(int) $alumno->alu_id"
+                    :hal-id="(int) $carrera->hal_id"
+                    lazy
+                />
+            </section>
 
         </div>
     @endif

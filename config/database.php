@@ -112,6 +112,9 @@ return [
             'prefix_indexes' => true,
             'search_path' => env('DB_EXTERNA_SEARCH_PATH', 'sh_movimientos,sh_maestros,public'),
             'sslmode' => env('DB_EXTERNA_SSLMODE', 'prefer'),
+            'options' => [
+                PDO::ATTR_PERSISTENT => true,
+            ],
         ],
 
         'sqlsrv' => [
