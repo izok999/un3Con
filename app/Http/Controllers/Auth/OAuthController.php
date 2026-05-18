@@ -38,14 +38,14 @@ class OAuthController extends Controller
         } catch (Throwable $exception) {
             report($exception);
 
-            return $this->redirectToLoginWithOAuthError('No se pudo completar el ingreso con Google. Intentá de nuevo.');
+            return $this->redirectToLoginWithOAuthError('No se pudo completar el ingreso con Google. Intenta de nuevo.');
         }
 
         $providerId = (string) $socialUser->getId();
         $email = $socialUser->getEmail();
 
         if ($providerId === '' || ! $email) {
-            return $this->redirectToLoginWithOAuthError('Google no devolvió la información mínima para autenticarte.');
+            return $this->redirectToLoginWithOAuthError('Google no devolvió la información mínima para autenticarse.');
         }
 
         $user = User::query()
@@ -67,7 +67,7 @@ class OAuthController extends Controller
             );
 
             if (! $user) {
-                return $this->redirectToLoginWithOAuthError('Ese correo ya está asociado a otra cuenta. Usá el botón "Vincular cuenta existente con Google" para enlazarla de forma segura.');
+                return $this->redirectToLoginWithOAuthError('Ese correo ya está asociado a otra cuenta. Usa el botón "Vincular cuenta existente con Google" para enlazarla de forma segura.');
             }
         }
 
@@ -107,7 +107,7 @@ class OAuthController extends Controller
     protected function defaultRedirectFor(User $user): string
     {
         if ($user->hasRole('ALUMNO')) {
-            return route('alumno.carreras');
+            return route('alumno.carreras');  //¿necesario?
         }
 
         return route('dashboard');
