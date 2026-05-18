@@ -4,7 +4,7 @@
         'es' => ['flag' => '🇵🇾', 'label' => 'ES'],
         'en' => ['flag' => '🇺🇸', 'label' => 'EN'],
         'pt' => ['flag' => '🇧🇷', 'label' => 'PT'],
-        'fr' => ['flag' => '🇫🇷', 'label' => 'FR'],
+        'gn' => ['flag' => '🪶', 'label' => 'GN'],
     ];
     $current = $locales[$currentLocale] ?? $locales['es'];
 @endphp

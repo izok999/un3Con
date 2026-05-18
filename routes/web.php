@@ -14,7 +14,7 @@ Route::get('/', function () {
 
 // Cambio de idioma — accesible para usuarios autenticados y guests
 Route::post('/locale', function (Request $request) {
-    $supported = ['es', 'en', 'pt', 'fr'];
+    $supported = ['es', 'en', 'pt', 'gn'];
     $locale = $request->input('locale');
 
     if (in_array($locale, $supported, strict: true)) {
