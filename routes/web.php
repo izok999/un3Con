@@ -19,6 +19,10 @@ Route::post('/locale', function (Request $request) {
 
     if (in_array($locale, $supported, strict: true)) {
         session(['locale' => $locale]);
+
+        if ($request->user()) {
+            $request->user()->update(['locale' => $locale]);
+        }
     }
 
     return back();

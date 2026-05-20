@@ -100,16 +100,7 @@ class OAuthController extends Controller
             return redirect()->route('auth.oauth.link-documento');
         }
 
-        return redirect()->intended($this->defaultRedirectFor($user));
-    }
-
-    protected function defaultRedirectFor(User $user): string
-    {
-        if ($user->hasRole('ALUMNO')) {
-            return route('alumno.carreras');
-        }
-
-        return route('dashboard');
+        return redirect()->route('dashboard');
     }
 
     protected function redirectToLoginWithOAuthError(string $message): RedirectResponse

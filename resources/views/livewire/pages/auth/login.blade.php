@@ -23,7 +23,7 @@ new #[Layout('layouts.guest')] class extends Component
         if ($this->form->attemptAuthentication()) {
             $this->form->clearRateLimit();
             Session::regenerate();
-            $this->redirectIntended(default: route('dashboard', absolute: false), navigate: true);
+            $this->redirectRoute('dashboard', navigate: true);
 
             return;
         }
@@ -46,7 +46,7 @@ new #[Layout('layouts.guest')] class extends Component
             return;
         }
 
-        $this->redirectIntended(default: route('alumno.carreras', absolute: false), navigate: true);
+        $this->redirectRoute('dashboard', navigate: true);
     }
 
     protected function requiresLegacyAccountCompletion(string $email): bool

@@ -11,7 +11,10 @@ Stack: **Tailwind CSS v4 + DaisyUI 5 + MaryUI 2.8 + Livewire 3**
 | `uneTheme` | Claro (default) | Automático o toggle |
 | `uneThemeDark` | Oscuro | Toggle ☀️/🌙 |
 
-El tema activo se persiste en `localStorage` bajo la clave `une-theme` y se aplica en `<html data-theme="...">` antes del primer render para evitar flash.
+El tema activo se persiste en `localStorage` y en una cookie `une-theme`.
+
+La cookie permite que el servidor renderice `<html data-theme="...">` con el tema correcto en cualquier vista.
+`localStorage` se mantiene como respaldo del lado del navegador y para sincronizar el toggle sin esperar una nueva request.
 
 ---
 
@@ -135,9 +138,10 @@ El checkbox con `id="theme-toggle"` puede colocarse en cualquier layout. El JS e
 ```
 
 El JS en `resources/js/app.js` maneja:
-1. Persistencia en `localStorage`
-2. Sincronización del estado del checkbox tras navegación `wire:navigate`
-3. Aplicación del tema antes del primer render (inline script en `<head>`)
+1. Persistencia híbrida en cookie + `localStorage`
+2. Validación de temas permitidos (`uneTheme`, `uneThemeDark`)
+3. Sincronización del estado del checkbox tras navegación `wire:navigate`
+4. Aplicación del tema antes del primer render (inline script en `<head>`)
 
 ---
 
@@ -146,7 +150,7 @@ El JS en `resources/js/app.js` maneja:
 | Archivo | Cambios |
 |---|---|
 | `resources/css/app.css` | Tema oscuro `uneThemeDark`, radios globales, `.bg-app-pattern`, clases glass |
-| `resources/js/app.js` | Theme toggle, persistencia localStorage, scroll listener topbar |
+| `resources/js/app.js` | Theme toggle, persistencia cookie + localStorage, scroll listener topbar |
 | `resources/views/layouts/app.blade.php` | Sidebar glass, topbar sticky glass, toggle en navbar |
 | `resources/views/layouts/guest.blade.php` | Fondo gradiente, card formulario glass |
 | `resources/views/welcome.blade.php` | Navbar sticky glass con toggle, tarjetas features glass |
@@ -171,7 +175,16 @@ Para cualquier vista nueva dentro del layout autenticado, los estilos se aplican
 Para páginas que no usan los layouts base (standalone), agregar:
 
 ```html
-<html data-theme="uneTheme">
+<html data-theme="{{ request()->cookie('une-theme', 'uneTheme') }}">
 <body class="bg-app-pattern font-sans antialiased text-base-content">
-<script>const t=localStorage.getItem('une-theme');if(t)document.documentElement.setAttribute('data-theme',t);</script>
+<script>
+(() => {
+    const t = localStorage.getItem('une-theme');
+    if (t) document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
 ```
+
+Si la vista standalone necesita render correcto desde el servidor, conviene validar también la cookie antes de imprimir `data-theme`.
+
+Ver además: `resources/docs/persistencia-tema-y-redireccion-login-2026-05-19.md`.

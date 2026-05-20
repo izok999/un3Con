@@ -26,7 +26,7 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         if (filled($user->documento)) {
-            $this->redirectIntended(default: $this->defaultRedirect(), navigate: true);
+            $this->redirectRoute('dashboard', navigate: true);
         }
     }
 
@@ -88,13 +88,7 @@ new #[Layout('layouts.app')] class extends Component
 
     protected function redirectAfterLinking(): void
     {
-        if (request()->hasSession()) {
-            $this->redirectIntended(default: route('alumno.carreras', absolute: false), navigate: true);
-
-            return;
-        }
-
-        $this->redirectRoute('alumno.carreras', navigate: true);
+        $this->redirectRoute('dashboard', navigate: true);
     }
 
     protected function updateCurrentUser(User $user, string $documento, object $alumno): User
@@ -224,13 +218,6 @@ new #[Layout('layouts.app')] class extends Component
 
     protected function defaultRedirect(): string
     {
-        /** @var User|null $user */
-        $user = Auth::user();
-
-        if ($user && $user->hasRole('ALUMNO')) {
-            return route('alumno.carreras', absolute: false);
-        }
-
         return route('dashboard', absolute: false);
     }
 }; ?>

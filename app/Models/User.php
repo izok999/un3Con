@@ -20,6 +20,7 @@ use Spatie\Permission\Traits\HasRoles;
     'auth_provider',
     'auth_provider_id',
     'avatar',
+    'locale',
 ])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
