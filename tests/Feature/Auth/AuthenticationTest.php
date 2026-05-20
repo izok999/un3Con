@@ -23,9 +23,9 @@ class AuthenticationTest extends TestCase
         $response
             ->assertOk()
             ->assertSeeVolt('pages.auth.login')
-            ->assertSee('Correo o documento')
-            ->assertSee('Contraseña o PIN')
-            ->assertDontSee('Vincular cuenta existente con Google');
+            ->assertSee(__('Correo o documento'))
+            ->assertSee(__('Contraseña o PIN'))
+            ->assertDontSee(__('Vincular cuenta existente con Google'));
     }
 
     public function test_users_can_authenticate_using_the_login_screen(): void
@@ -120,7 +120,7 @@ class AuthenticationTest extends TestCase
         $this->assertAuthenticatedAs($user);
     }
 
-    public function test_legacy_login_redirects_completed_accounts_to_alumno_portal(): void
+    public function test_legacy_login_redirects_completed_accounts_to_dashboard(): void
     {
         $existingUser = User::factory()->create([
             'documento' => '1234567',
@@ -152,7 +152,7 @@ class AuthenticationTest extends TestCase
 
         $component
             ->assertHasNoErrors()
-            ->assertRedirect(route('alumno.carreras', absolute: false));
+            ->assertRedirect(route('dashboard', absolute: false));
 
         $this->assertAuthenticatedAs($existingUser->fresh());
     }
@@ -239,7 +239,9 @@ class AuthenticationTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertSeeVolt('layout.navigation');
+            ->assertSee('href="'.route('dashboard').'"', false)
+            ->assertSee('href="'.route('profile').'"', false)
+            ->assertSee('id="theme-toggle"', false);
     }
 
     public function test_users_can_logout(): void

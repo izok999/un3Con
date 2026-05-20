@@ -66,7 +66,7 @@ class OAuthAuthenticationTest extends TestCase
 
         $response = $this->get(route('auth.google.callback'));
 
-        $response->assertRedirect(route('alumno.carreras'));
+        $response->assertRedirect(route('dashboard'));
 
         $user->refresh();
 
@@ -93,7 +93,7 @@ class OAuthAuthenticationTest extends TestCase
 
         $response = $this->get(route('auth.google.callback'));
 
-        $response->assertRedirect(route('alumno.carreras'));
+        $response->assertRedirect(route('dashboard'));
 
         $user->refresh();
 
@@ -177,7 +177,7 @@ class OAuthAuthenticationTest extends TestCase
 
         $response = $this->get(route('auth.google.callback'));
 
-        $response->assertRedirect(route('alumno.carreras'));
+        $response->assertRedirect(route('dashboard'));
 
         $user->refresh();
 
@@ -255,7 +255,7 @@ class OAuthAuthenticationTest extends TestCase
 
         $component
             ->assertHasNoErrors()
-            ->assertRedirect(route('alumno.carreras', absolute: false));
+            ->assertRedirect(route('dashboard', absolute: false));
 
         $existingStudent->refresh();
 

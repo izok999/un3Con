@@ -3,18 +3,46 @@ import './particles';
 
 // ── UNE Theme System ──────────────────────────────────────────────────
 
+const allowedThemes = ['uneTheme', 'uneThemeDark'];
+
+function readThemeCookie() {
+    const serializedThemeCookie = document.cookie
+        .split('; ')
+        .find((cookie) => cookie.startsWith('une-theme='));
+
+    if (! serializedThemeCookie) {
+        return null;
+    }
+
+    const theme = decodeURIComponent(serializedThemeCookie.split('=').slice(1).join('='));
+
+    return allowedThemes.includes(theme) ? theme : null;
+}
+
+function persistTheme(theme) {
+    if (! allowedThemes.includes(theme)) {
+        return;
+    }
+
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('une-theme', theme);
+    document.cookie = `une-theme=${encodeURIComponent(theme)}; path=/; max-age=31536000; samesite=lax`;
+}
+
 // 1. Aplicar tema guardado en localStorage antes del primer render
 (function () {
-    const saved = localStorage.getItem('une-theme');
-    if (saved) document.documentElement.setAttribute('data-theme', saved);
+    const saved = readThemeCookie() ?? localStorage.getItem('une-theme');
+
+    if (allowedThemes.includes(saved)) {
+        persistTheme(saved);
+    }
 })();
 
 // 2. Toggle via event delegation (sobrevive re-renders de Livewire)
 document.addEventListener('change', (e) => {
     if (e.target.id === 'theme-toggle') {
         const theme = e.target.checked ? 'uneThemeDark' : 'uneTheme';
-        document.documentElement.setAttribute('data-theme', theme);
-        localStorage.setItem('une-theme', theme);
+        persistTheme(theme);
     }
 });
 

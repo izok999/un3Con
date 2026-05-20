@@ -291,6 +291,60 @@ Esto evita el peor escenario:
 - pero sin reflejo real en legacy
 - y con estados financieros inconsistentes entre ambos sistemas
 
+## Matriz de decisión para Bancard y legacy antes de modelar BD
+
+### Huecos confirmados hoy
+
+- El historial read-only actual de pagos solo expone `uac_descri`, `ciu_descri`, `cob_numero`, `cob_fecha`, `cob_monto`, `cob_arancel`, `cob_perceptor`, `mat_descri`, `cob_idrol`, `cob_tprol` y `anho`.
+- No expone `rsc_id`, `ple_id`, `hal_id` ni un identificador robusto del item de deuda pagado.
+- No existe todavía un write-path legacy confirmado para registrar cobros online.
+- La UI visible sigue tomando legacy como fuente de verdad para el estado financiero final.
+
+### Matriz
+
+| Eje | Pregunta a cerrar | Dueño principal | Si se confirma | Si no se confirma | Impacto directo en BD |
+| --- | --- | --- | --- | --- | --- |
+| Correlación end-to-end | ¿Qué identificador único viaja desde el checkout hasta el callback y luego al write-path legacy? | Bancard + legacy | Se puede seguir una operación punta a punta sin heurísticas | La conciliación depende de monto, fecha y alumno | Obliga a persistir un `portal_reference` durable por intento |
+| Granularidad del pago | ¿Un checkout paga una deuda puntual, varias deudas o un saldo libre del alumno? | Legacy + negocio | Si siempre es un solo item, el modelo puede ser simple | Si puede cubrir varios items, el intento debe descomponerse | Define si hace falta una tabla tipo `payment_attempt_items` |
+| Write-path oficial | ¿Legacy ofrece API, procedure o tabla de integración soportada? | Legacy | Se puede mantener a legacy como verdad final del cobro | No se debe habilitar cobro productivo | Sin este contrato, no conviene cerrar todavía un modelo transaccional |
+| Idempotencia | ¿Qué clave evita doble imputación ante callbacks duplicados o reintentos? | Bancard + legacy | Se puede reprocesar con seguridad | Hay riesgo de doble registro o doble imputación | Obliga a guardar `idempotency_key` y deduplicación de eventos |
+| Estado visible | ¿Cuándo puede verse “pagado”: al volver del checkout, al callback o solo cuando legacy confirme? | Negocio + legacy | Si basta esperar a legacy, el portal no necesita estado financiero propio fuerte | Si el portal debe mostrar estados previos a legacy, necesita estados locales | Define si basta log técnico o si hace falta state machine local |
+| Payload de callback | ¿Qué campos exactos envía Bancard y cuáles vienen firmados? | Bancard | Se puede normalizar un contrato estable | Si el payload es variable o incompleto, hay que guardar el evento crudo | Empuja a una tabla de eventos con `raw_payload` |
+| Montos y reglas monetarias | ¿Hay moneda única, comisión, interés, pago parcial, saldo a favor, reversa o devolución? | Bancard + negocio + legacy | El modelo monetario puede ser acotado | Si hay parciales o reversas, el flujo se vuelve contable | Puede requerir movimientos/eventos en vez de un solo estado |
+| Confirmación de legacy | ¿Qué devuelve legacy al registrar: recibo, fecha, perceptor, estado consultable, código de error? | Legacy | Se cierra el ciclo con comprobante fuerte | Si solo hay acuse técnico, la conciliación queda débil | Conviene persistir correlación hasta que legacy refleje el pago |
+| Alcance académico | ¿Legacy puede devolver o aceptar `rsc_id`, `ple_id`, `hal_id` al registrar/consultar pagos? | Legacy | Se puede asociar el pago a carrera o habilitación | Si no, el vínculo sigue siendo solo a nivel alumno | Define si la BD puede tener FKs fuertes a deuda/habilitación |
+| Reintentos y orden | ¿Bancard reintenta callbacks y pueden llegar fuera de orden? | Bancard | Diseño simple si el orden es determinista | Si hay duplicados o out-of-order, hace falta historial durable | Recomienda `payment_events` con dedupe y timestamps |
+| Operación manual | ¿Soporte necesita reintentar, reconciliar o corregir pagos manualmente? | Negocio + soporte | Menor superficie operativa | Si sí, se necesita auditoría y trazabilidad explícita | Puede requerir campos de operador, motivo y resolución |
+
+### Contratos que conviene salir de la reunión con dueño
+
+| Contrato | Dueño | Input mínimo a acordar | Output mínimo a acordar |
+| --- | --- | --- | --- |
+| `CreateCheckout` | Bancard | `portal_reference`, referencia del alumno, monto, moneda, descripción, `return_url`, `callback_url`, expiración | identificador de operación del provider, URL o token de checkout, estado inicial, expiración efectiva |
+| `HandleWebhook` | Bancard | identificador de operación del provider, `portal_reference`, estado, monto, moneda, firma, fecha del evento, payload completo | confirmación de recepción, resultado de deduplicación, motivo de rechazo si corresponde |
+| `RegisterLegacyPayment` | Legacy | `portal_reference`, identificador del provider, referencia del alumno, referencia de deuda o alcance, monto, fecha efectiva, medio de pago | número de recibo o comprobante, estado legacy, fecha de registración, error o código funcional |
+| `FetchLegacyPaymentStatus` | Legacy | `portal_reference`, número de recibo o identificador legacy consultable | estado final, comprobante, fecha de imputación, datos mínimos para refrescar la UI |
+
+### Campos mínimos a confirmar antes de crear tablas
+
+- `portal_reference`: identificador propio del portal para correlación e idempotencia.
+- `provider_transaction_id`: identificador definitivo de la operación en Bancard.
+- `provider_status`: estado normalizado del provider.
+- `provider_status_at`: timestamp del último cambio conocido.
+- `documento` y/o `alu_id`: clave del alumno usada en todos los contratos.
+- `debt_scope`: confirmar si será `deu_id`, `rsc_id`, `ple_id`, `hal_id` o solo `alu_id`.
+- `amount` y `currency`.
+- `idempotency_key`: clave de deduplicación entre callbacks y reintentos.
+- `legacy_receipt_number`: número de recibo o comprobante en legacy, si existe.
+- `legacy_registered_at`: fecha y hora efectiva de imputación en legacy.
+- `raw_payload`: necesario si Bancard no garantiza contrato estable o si soporte necesita auditoría fuerte.
+
+### Regla práctica para no sobrediseñar
+
+- Si legacy confirma write-path oficial, idempotencia y recibo consultable, el modelo local puede mantenerse mínimo y operativo.
+- Si el pago puede cubrir múltiples deudas o estados intermedios visibles, hay que asumir desde el inicio intentos, items y eventos.
+- Si no existe write-path legacy, no conviene modelar todavía cobro productivo; solo scaffold y logs técnicos.
+
 ## Nota para futuro yo
 
 Si retomás este tema después:
