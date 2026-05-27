@@ -85,7 +85,7 @@ new #[Layout('layouts.guest')] class extends Component
 }; ?>
 
 <div>
-    <div class="mb-4 text-sm text-gray-600">
+    <div class="mb-4 text-sm text-base-content/70">
         {{ __('¿Olvidaste tu contraseña? Ingresá tu correo o tu número de documento. Si la cuenta ya tiene un correo recuperable, te enviaremos el enlace para restablecerla.') }}
     </div>
 
@@ -94,9 +94,9 @@ new #[Layout('layouts.guest')] class extends Component
 
     <form wire:submit="sendPasswordResetLink">
         <!-- Email Address / Documento -->
-        <div>
-            <x-input-label for="identifier" :value="__('Correo o documento')" />
-            <x-text-input wire:model="identifier" id="identifier" class="block mt-1 w-full" type="text" name="identifier" required autofocus autocomplete="username" />
+        <div class="mb-4 text-sm text-base-content/70">
+            <x-input-label for="identifier" :value="__('Correo o documento')" class="text-base-content" />
+            <x-text-input wire:model="identifier" id="identifier" class="block mt-1 w-full px-3 bg-base-100 text-base-content placeholder:text-base-content/70 focus:border-primary focus:ring-primary rounded-md shadow-sm" type="text" name="identifier" required autofocus autocomplete="username" />
             <x-input-error :messages="$errors->get('identifier')" class="mt-2" />
         </div>
 

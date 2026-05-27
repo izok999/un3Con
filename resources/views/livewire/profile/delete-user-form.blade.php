@@ -25,11 +25,11 @@ new class extends Component
 
 <section class="space-y-6">
     <header>
-        <h2 class="text-lg font-medium text-gray-900">
+        <h2 class="text-lg font-medium text-base-content">
             {{ __('Borrar Cuenta') }}
         </h2>
 
-        <p class="mt-1 text-sm text-gray-600">
+        <p class="mt-1 text-sm text-base-content/70">
             {{ __('Una vez que su cuenta sea eliminada, todos sus recursos y datos serán eliminados permanentemente. Antes de eliminar su cuenta, por favor descargue cualquier dato o información que desee conservar.') }}
         </p>
     </header>
@@ -39,14 +39,14 @@ new class extends Component
         x-on:click.prevent="$dispatch('open-modal', 'confirm-user-deletion')"
     >{{ __('Borrar Cuenta') }}</x-danger-button>
 
-    <x-dialog-modal name="confirm-user-deletion" :show="$errors->isNotEmpty()">
-        <form wire:submit="deleteUser" class="p-6">
+    <x-dialog-modal name="confirm-user-deletion" :show="$errors->isNotEmpty()" focusable class="z-50 bg-base-100 text-base-content">
+        <form wire:submit="deleteUser" class="p-6 space-y-6 bg-base-100 text-base-content">
 
-            <h2 class="text-lg font-medium text-gray-900">
+            <h2 class="text-lg font-medium text-base-content">
                 {{ __('¿Está seguro de que desea eliminar su cuenta?') }}
             </h2>
 
-            <p class="mt-1 text-sm text-gray-600">
+            <p class="mt-1 text-sm text-base-content/70">
                 {{ __('Una vez que su cuenta sea eliminada, todos sus recursos y datos serán eliminados permanentemente. Por favor, ingrese su contraseña para confirmar que desea eliminar permanentemente su cuenta.') }}
             </p>
 
@@ -58,7 +58,7 @@ new class extends Component
                     id="password"
                     name="password"
                     type="password"
-                    class="mt-1 block w-3/4"
+                    class="mt-1 px-3 bg-base-100 text-base-content placeholder:text-base-content/70 focus:border-primary focus:ring-primary rounded-md shadow-sm"
                     placeholder="{{ __('Contraseña') }}"
                 />
 

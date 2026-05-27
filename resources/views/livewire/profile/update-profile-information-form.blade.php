@@ -64,33 +64,33 @@ new class extends Component
 
 <section>
     <header>
-        <h2 class="text-lg font-medium text-gray-900">
+        <h2 class="text-lg font-medium text-base-content">
             {{ __('Información de Perfil') }}
         </h2>
 
-        <p class="mt-1 text-sm text-gray-600">
+        <p class="mt-1 text-sm text-base-content/70">
             {{ __("Actualice la información de su perfil y su dirección de correo electrónico.") }}
         </p>
     </header>
 
     <form wire:submit="updateProfileInformation" class="mt-6 space-y-6">
         <div>
-            <x-input-label for="name" :value="__('Nombre')" />
-            <x-text-input wire:model="name" id="name" name="name" type="text" class="mt-1 block w-full" required autofocus autocomplete="name" />
+            <x-input-label for="name" :value="__('Nombre')" class="text-base-content" />
+            <x-text-input wire:model="name" id="name" name="name" type="text" class="mt-1 block w-full px-3 bg-base-50 text-base-content placeholder:text-base-content/70 focus:border-primary focus:ring-primary rounded-md shadow-sm" required autofocus autocomplete="name" />
             <x-input-error class="mt-2" :messages="$errors->get('name')" />
         </div>
 
         <div>
-            <x-input-label for="email" :value="__('Correo Electrónico')" />
-            <x-text-input wire:model="email" id="email" name="email" type="email" class="mt-1 block w-full" required autocomplete="username" />
+            <x-input-label for="email" :value="__('Correo Electrónico')" class="text-base-content" />
+            <x-text-input wire:model="email" id="email" name="email" type="email" class="mt-1 block w-full px-3 bg-base-50 text-base-content placeholder:text-base-content/70 focus:border-primary focus:ring-primary rounded-md shadow-sm" required autocomplete="username" />
             <x-input-error class="mt-2" :messages="$errors->get('email')" />
 
             @if (auth()->user() instanceof \Illuminate\Contracts\Auth\MustVerifyEmail && ! auth()->user()->hasVerifiedEmail())
                 <div>
-                    <p class="text-sm mt-2 text-gray-800">
+                    <p class="text-sm mt-2 text-base-content/70">
                         {{ __('Su dirección de correo electrónico no está verificada.') }}
 
-                        <button wire:click.prevent="sendVerification" class="underline text-sm text-gray-600 hover:text-gray-900 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        <button wire:click.prevent="sendVerification" class="underline text-sm text-base-content hover:text-base-content/90 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                             {{ __('Haga clic aquí para reenviar el correo electrónico de verificación.') }}
                         </button>
                     </p>

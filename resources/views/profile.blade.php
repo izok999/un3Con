@@ -1,6 +1,6 @@
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+        <h2 class="font-semibold text-xl text-base-content leading-tight">
             {{ __('Perfil') }}
         </h2>
     </x-slot>
@@ -10,7 +10,7 @@
             <x-auth-session-status class="sm:px-2" :status="session('status')" />
 
             @if (filled(auth()->user()?->auth_provider))
-                <div class="p-4 sm:p-8 bg-white shadow sm:rounded-lg border border-emerald-200 bg-emerald-50/40">
+                <div class="p-4 sm:p-8 shadow sm:rounded-lg border border-emerald-200 bg-base-100 text-base-content card glass-card">
                     <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                         <div class="flex items-start gap-4">
                             @if (filled(auth()->user()?->avatar))
@@ -20,7 +20,7 @@
                                     class="h-12 w-12 rounded-full border border-emerald-200 object-cover"
                                 />
                             @else
-                                <div class="flex h-12 w-12 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-600">
+                                <div class="flex h-12 w-12 items-center justify-center rounded-full border border-emerald-200 bg-base-100 text-emerald-600">
                                     <svg class="h-6 w-6" viewBox="0 0 24 24" aria-hidden="true">
                                         <path fill="currentColor" d="M21.35 11.1h-9.18v2.98h5.27c-.23 1.48-1.76 4.36-5.27 4.36-3.17 0-5.75-2.62-5.75-5.85s2.58-5.85 5.75-5.85c1.8 0 3 .77 3.69 1.44l2.52-2.43C16.76 4.18 14.67 3.2 12.17 3.2 7.18 3.2 3.13 7.27 3.13 12.3s4.05 9.1 9.04 9.1c5.22 0 8.68-3.67 8.68-8.84 0-.59-.06-1.03-.14-1.46Z"/>
                                     </svg>
@@ -28,26 +28,26 @@
                             @endif
 
                             <div class="space-y-1">
-                                <div class="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-3 py-1 text-sm font-medium text-emerald-700">
+                                <div class="inline-flex items-center gap-2 rounded-full border border-emerald-200 px-3 py-1 text-sm font-medium text-emerald-500">
                                     <span class="inline-block h-2 w-2 rounded-full bg-emerald-500"></span>
                                     Cuenta vinculada con Google
                                 </div>
-                                <p class="text-sm text-gray-700">
+                                <p class="text-sm text-base-content">
                                     Esta cuenta ya puede ingresar con Google sin perder la identidad local asociada al documento.
                                 </p>
-                                <p class="text-xs text-gray-600">
-                                    Correo vinculado: <span class="font-medium text-gray-800">{{ auth()->user()->email }}</span>
+                                <p class="text-xs text-base-content/70">
+                                    Correo vinculado: <span class="font-medium text-base-content">{{ auth()->user()->email }}</span>
                                 </p>
                             </div>
                         </div>
                     </div>
                 </div>
             @else
-                <div class="p-4 sm:p-8 bg-white shadow sm:rounded-lg border border-base-300">
+                <div class="p-4 sm:p-8 bg-base-100 shadow sm:rounded-lg border border-base-300 card glass-card">
                     <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                         <div class="max-w-2xl space-y-1">
-                            <h3 class="text-lg font-semibold text-gray-900">Vincular Google</h3>
-                            <p class="text-sm text-gray-600">
+                            <h3 class="text-lg font-semibold text-base-content">Vincular Google</h3>
+                            <p class="text-sm text-base-content/70">
                                 Sumá Google como método adicional de acceso para esta misma cuenta. Vas a mantener tu documento y tu contraseña local, pero también vas a poder entrar con OAuth.
                             </p>
                         </div>
@@ -65,19 +65,19 @@
                 </div>
             @endif
 
-            <div class="p-4 sm:p-8 bg-white shadow sm:rounded-lg">
+            <div class="p-4 sm:p-8 bg-base-100 shadow sm:rounded-lg card glass-card">
                 <div class="max-w-xl">
                     <livewire:profile.update-profile-information-form />
                 </div>
             </div>
 
-            <div class="p-4 sm:p-8 bg-white shadow sm:rounded-lg">
+            <div class="p-4 sm:p-8 bg-base-100 shadow sm:rounded-lg card glass-card">
                 <div class="max-w-xl">
                     <livewire:profile.update-password-form />
                 </div>
             </div>
 
-            <div class="p-4 sm:p-8 bg-white shadow sm:rounded-lg">
+            <div class="p-4 sm:p-8 bg-base-100 shadow sm:rounded-lg border border-red-300 card glass-card">
                 <div class="max-w-xl">
                     <livewire:profile.delete-user-form />
                 </div>
