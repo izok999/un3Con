@@ -187,7 +187,7 @@ new #[Layout('layouts.app')] class extends Component
 ?>
 
 <div>
-    <x-mary-header title="Mis Deudas" subtitle="Estado financiero con deudas activas, pagos legacy e historial cronológico" separator />
+    <x-mary-header title="Mis Deudas" subtitle="Estado financiero con deudas activas, pagos legacy e historial cronológico" icon="o-currency-dollar" separator />
 
     @if($error !== '')
         <x-mary-alert title="{{ $error }}" icon="o-exclamation-triangle" class="alert-warning" />

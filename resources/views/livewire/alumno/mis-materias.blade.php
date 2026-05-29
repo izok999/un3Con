@@ -38,7 +38,7 @@ new #[Layout('layouts.app')] class extends Component
 ?>
 
 <div>
-    <x-mary-header title="Materias Inscriptas" subtitle="Periodo vigente" separator />
+    <x-mary-header title="Materias Inscriptas" subtitle="Periodo vigente" icon="o-book-open" separator />
 
     @if($error !== '')
         <x-mary-alert title="{{ $error }}" icon="o-exclamation-triangle" class="alert-warning" />

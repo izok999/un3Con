@@ -5,6 +5,12 @@ import './particles';
 
 const allowedThemes = ['uneTheme', 'uneThemeDark'];
 
+function readPersistedTheme() {
+    const theme = readThemeCookie() ?? localStorage.getItem('une-theme');
+
+    return allowedThemes.includes(theme) ? theme : null;
+}
+
 function readThemeCookie() {
     const serializedThemeCookie = document.cookie
         .split('; ')
@@ -31,9 +37,9 @@ function persistTheme(theme) {
 
 // 1. Aplicar tema guardado en localStorage antes del primer render
 (function () {
-    const saved = readThemeCookie() ?? localStorage.getItem('une-theme');
+    const saved = readPersistedTheme();
 
-    if (allowedThemes.includes(saved)) {
+    if (saved) {
         persistTheme(saved);
     }
 })();
@@ -48,13 +54,21 @@ document.addEventListener('change', (e) => {
 
 // 3. Sincronizar estado del checkbox tras cada carga / navegación Livewire
 function syncThemeToggle() {
+    const theme = readPersistedTheme();
+
+    if (theme) {
+        persistTheme(theme);
+    }
+
     const toggle = document.getElementById('theme-toggle');
+
     if (toggle) {
         toggle.checked = document.documentElement.getAttribute('data-theme') === 'uneThemeDark';
     }
 }
 
 let routeTransitionTimeout;
+const routeTransitionClearDelay = 240;
 
 function setRouteTransition(state) {
     if (routeTransitionTimeout) {
@@ -76,7 +90,7 @@ document.addEventListener('livewire:navigate', () => setRouteTransition('out'));
 document.addEventListener('livewire:navigated', () => {
     setRouteTransition('in');
 
-    routeTransitionTimeout = window.setTimeout(() => setRouteTransition(null), 460);
+    routeTransitionTimeout = window.setTimeout(() => setRouteTransition(null), routeTransitionClearDelay);
 });
 
 // 4. Topbar: clase "scrolled" para el efecto glass intensificado al hacer scroll

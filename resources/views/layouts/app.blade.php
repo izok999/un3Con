@@ -33,6 +33,17 @@
         </script>
     </head>
     <body class="min-h-screen font-sans antialiased bg-app-pattern text-base-content">
+        {{-- Canvas de partículas ambiente: misma red del login, muy sutil, fija detrás de todo --}}
+        <canvas id="app-particles"
+                data-particles
+                data-particles-opacity="0.20"
+                data-particles-line-opacity="0.30"
+                data-particles-count-desktop="30"
+                data-particles-count-mobile="10"
+                data-particles-dist="110"
+                class="fixed inset-0 w-full h-full pointer-events-none"
+                style="z-index: 0"></canvas>
+
         @php
             $isAlumno = auth()->user()?->hasRole('ALUMNO') ?? false;
             $isAdmin = auth()->user()?->hasRole('ADMIN') ?? false;
@@ -65,6 +76,13 @@
                     'route' => 'alumno.materias',
                     'active' => ['alumno.materias'],
                 ],
+                'evaluacion_docente' => [
+                    'title' => 'Evaluación Docente',
+                    'mobile_title' => 'Eval Doc',
+                    'icon' => 'o-clipboard-document-check',
+                    'route' => 'alumno.evaluacion-docente',
+                    'active' => ['alumno.evaluacion-docente', 'alumno.evaluacion-docente.form'],
+                ],
                 'deudas' => [
                     'title' => 'Mis Deudas',
                     'mobile_title' => 'Pagos',
@@ -78,7 +96,7 @@
                 [
                     'title' => 'Académico',
                     'icon' => 'o-academic-cap',
-                    'items' => ['carreras', 'extracto', 'materias'],
+                    'items' => ['carreras', 'extracto', 'materias', 'evaluacion_docente'],
                 ],
                 [
                     'title' => 'Finanzas',
@@ -87,7 +105,7 @@
                 ],
             ];
 
-            $alumnoMobileNavigation = ['home', 'carreras', 'extracto', 'materias', 'deudas'];
+            $alumnoMobileNavigation = ['home', 'carreras', 'extracto', 'materias', 'evaluacion_docente', 'deudas'];
         @endphp
 
         <x-main full-width>
@@ -128,6 +146,8 @@
                         <x-menu-sub title="Administración" icon="o-cog-6-tooth">
                             <x-menu-item title="Dashboard Admin" icon="o-chart-bar" link="{{ route('admin.dashboard') }}" />
                             <x-menu-item title="Consulta Alumnos" icon="o-magnifying-glass" link="{{ route('admin.consulta-alumno') }}" />
+                            <x-menu-item title="Docentes Evaluación" icon="o-clipboard-document-list" link="{{ route('admin.evaluacion-docente.docentes') }}" />
+                            <x-menu-item title="Config. Eval Docente" icon="o-adjustments-horizontal" link="{{ route('admin.evaluacion-docente.configuracion') }}" />
                         </x-menu-sub>
                     @endif
 
@@ -201,9 +221,9 @@
             <nav
                 data-testid="alumno-mobile-bottom-nav"
                 aria-label="Navegacion principal del alumno"
-                class="mobile-bottom-nav glass-navbar fixed inset-x-4 z-[60] lg:hidden"
+                class="mobile-bottom-nav glass-navbar fixed inset-x-4 z-60 lg:hidden"
             >
-                <div class="grid grid-cols-5 gap-1 p-2">
+                <div class="grid grid-cols-6 gap-1 p-2">
                     @foreach ($alumnoMobileNavigation as $itemKey)
                         @php
                             $item = $navigationLinks[$itemKey];

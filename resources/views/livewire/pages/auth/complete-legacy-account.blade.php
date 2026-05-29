@@ -85,7 +85,7 @@ new #[Layout('layouts.app')] class extends Component
 }; ?>
 
 <div class="mx-auto max-w-2xl space-y-6">
-    <x-mary-header title="Completá tu cuenta" subtitle="Entraste con tu documento y PIN del sistema anterior. Ahora definí tu correo real y tu contraseña local para terminar la activación." separator />
+    <x-mary-header title="Completá tu cuenta" subtitle="Entraste con tu documento y PIN del sistema anterior. Ahora definí tu correo real y tu contraseña local para terminar la activación." icon="o-user-circle" separator />
 
     <x-auth-session-status class="mb-4" :status="session('status')" />
 

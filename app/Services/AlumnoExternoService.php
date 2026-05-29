@@ -617,4 +617,123 @@ class AlumnoExternoService
 
         return $row->{$field} ?? null;
     }
+
+    /**
+     * Catálogo de carreras para selects administrativos: [car_id => 'pac_descri']
+     * Usa distinct car_id + pac_descri de la vista de habilitaciones.
+     *
+     * @return array<int, string>
+     */
+    public function catCarreras(): array
+    {
+        return Cache::remember('ext_cat_carreras', 3600, function (): array {
+            return $this->query()
+                ->table('sh_movimientos.vw_alumnos_habilitacion_22')
+                ->select(['car_id', 'pac_descri'])
+                ->distinct()
+                ->orderBy('pac_descri')
+                ->get()
+                ->mapWithKeys(fn ($row) => [(int) $row->car_id => trim($row->pac_descri)])
+                ->all();
+        });
+    }
+
+    /**
+     * Catálogo de sedes para selects administrativos: [sed_id => 'uac_descri — sed_descri']
+     *
+     * @return array<int, string>
+     */
+    public function catSedes(): array
+    {
+        return Cache::remember('ext_cat_sedes', 3600, function (): array {
+            return $this->query()
+                ->table('sh_maestros.vw_unidadesacademicas_sedes_00')
+                ->select(['sed_id', 'uac_descri', 'sed_descri'])
+                ->orderBy('uac_descri')
+                ->orderBy('sed_descri')
+                ->get()
+                ->mapWithKeys(fn ($row) => [
+                    (int) $row->sed_id => trim($row->uac_descri).' — '.trim($row->sed_descri),
+                ])
+                ->all();
+        });
+    }
+
+    /**
+     * Catálogo de periodos lectivos: [ple_id => 'ple_codigo — ple_descri'], más recientes primero.
+     *
+     * @return array<int, string>
+     */
+    public function catPeriodos(): array
+    {
+        return Cache::remember('ext_cat_periodos', 3600, function (): array {
+            return $this->query()
+                ->table('sh_maestros.vw_periodo_lectivo_11')
+                ->select(['ple_id', 'ple_codigo', 'ple_descri'])
+                ->orderByDesc('ple_codigo')
+                ->get()
+                ->mapWithKeys(fn ($row) => [
+                    (int) $row->ple_id => trim($row->ple_codigo).' — '.trim($row->ple_descri),
+                ])
+                ->all();
+        });
+    }
+
+    /**
+     * Catálogo de turnos: [tur_id => 'tur_descri']
+     *
+     * @return array<int, string>
+     */
+    public function catTurnos(): array
+    {
+        return Cache::remember('ext_cat_turnos', 3600, function (): array {
+            return $this->query()
+                ->table('sh_maestros.vw_turnos_00')
+                ->select(['tur_id', 'tur_descri'])
+                ->orderBy('tur_codigo')
+                ->get()
+                ->mapWithKeys(fn ($row) => [(int) $row->tur_id => trim($row->tur_descri)])
+                ->all();
+        });
+    }
+
+    /**
+     * Catálogo de secciones: [sec_id => 'sec_descri']
+     *
+     * @return array<int, string>
+     */
+    public function catSecciones(): array
+    {
+        return Cache::remember('ext_cat_secciones', 3600, function (): array {
+            return $this->query()
+                ->table('sh_maestros.vw_secciones_00')
+                ->select(['sec_id', 'sec_descri'])
+                ->orderBy('sec_codigo')
+                ->get()
+                ->mapWithKeys(fn ($row) => [(int) $row->sec_id => trim($row->sec_descri)])
+                ->all();
+        });
+    }
+
+    /**
+     * Nombres de materias para un conjunto de mi2_ids: [mi2_id => 'mat_descri']
+     *
+     * @param  array<int>  $mi2Ids
+     * @return array<int, string>
+     */
+    public function catMateriasPorIds(array $mi2Ids): array
+    {
+        if (empty($mi2Ids)) {
+            return [];
+        }
+
+        return $this->query()
+            ->table('sh_maestros.vw_materias_en_mallas_vigentes_01')
+            ->select(['mi2_id', 'mat_descri'])
+            ->whereIn('mi2_id', $mi2Ids)
+            ->get()
+            ->unique('mi2_id')
+            ->mapWithKeys(fn ($row) => [(int) $row->mi2_id => trim($row->mat_descri)])
+            ->all();
+    }
 }

@@ -29,6 +29,7 @@ new #[Lazy] class extends Component
     }
 }; ?>
 
+<div class="space-y-3">
 <div class="card glass-card">
     <div class="card-body">
         <h2 class="mb-1 text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Progreso de la carrera</h2>
@@ -135,4 +136,5 @@ new #[Lazy] class extends Component
             </div>
         @endif
     </div>
+</div>
 </div>

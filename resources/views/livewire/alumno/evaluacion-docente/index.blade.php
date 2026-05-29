@@ -1,0 +1,245 @@
+<?php
+
+use App\Models\EvaluacionDocente;
+use App\Models\PeriodoEvaluacion;
+use App\Services\EvaluacionDocente\DocentesElegiblesResolver;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
+use Livewire\Attributes\Layout;
+use Livewire\Volt\Component;
+
+new #[Layout('layouts.app')] class extends Component
+{
+    public Collection $periodos;
+
+    public Collection $docentes;
+
+    public Collection $evaluaciones;
+
+    public ?PeriodoEvaluacion $periodoActivo = null;
+
+    public string $selectedPeriodoId = '';
+
+    public array $evaluadosEnPeriodoActivo = [];
+
+    public string $error = '';
+
+    public function boot(): void
+    {
+        $this->periodos = collect();
+        $this->docentes = collect();
+        $this->evaluaciones = collect();
+    }
+
+    protected function schemaIsReady(): bool
+    {
+        return Schema::hasTable('periodos_evaluacion')
+            && Schema::hasTable('docentes')
+            && Schema::hasTable('docente_contextos')
+            && Schema::hasTable('evaluaciones_docentes');
+    }
+
+    public function mount(DocentesElegiblesResolver $resolver): void
+    {
+        $user = Auth::user();
+
+        abort_unless($user, 403);
+
+        if (! $this->schemaIsReady()) {
+            $this->error = 'El módulo de evaluación docente todavía no está disponible en este entorno.';
+
+            return;
+        }
+
+        $this->periodos = PeriodoEvaluacion::query()
+            ->orderByDesc('fecha_inicio')
+            ->get();
+
+        $this->periodoActivo = PeriodoEvaluacion::query()
+            ->where('activo', true)
+            ->orderByDesc('fecha_inicio')
+            ->first();
+
+        $this->selectedPeriodoId = (string) ($this->periodoActivo?->id ?? $this->periodos->first()?->id ?? '');
+        $this->docentes = $this->periodoActivo ? $resolver->paraAlumno($user) : collect();
+        $this->evaluadosEnPeriodoActivo = $this->periodoActivo
+            ? EvaluacionDocente::query()
+                ->where('evaluador_user_id', $user->id)
+                ->where('periodo_evaluacion_id', $this->periodoActivo->id)
+                ->pluck('docente_id')
+                ->map(fn (mixed $id): int => (int) $id)
+                ->all()
+            : [];
+
+        if (! $this->periodoActivo) {
+            $this->error = 'No hay un periodo de evaluación activo en este momento.';
+        }
+
+        $this->loadEvaluaciones();
+    }
+
+    public function updatedSelectedPeriodoId(): void
+    {
+        $this->loadEvaluaciones();
+    }
+
+    protected function loadEvaluaciones(): void
+    {
+        $user = Auth::user();
+
+        if (! $user || $this->selectedPeriodoId === '') {
+            $this->evaluaciones = collect();
+
+            return;
+        }
+
+        $this->evaluaciones = EvaluacionDocente::query()
+            ->where('evaluador_user_id', $user->id)
+            ->where('periodo_evaluacion_id', (int) $this->selectedPeriodoId)
+            ->orderByDesc('fecha_envio')
+            ->get();
+    }
+}; ?>
+
+<div class="space-y-6">
+    <x-mary-header title="Evaluación Docente" subtitle="Docentes habilitados y evaluaciones registradas" icon="o-clipboard-document-check" separator />
+
+    @if (session('status'))
+        <x-mary-alert title="{{ session('status') }}" icon="o-check-circle" class="alert-success" />
+    @endif
+
+    @if ($error !== '')
+        <x-mary-alert title="{{ $error }}" icon="o-exclamation-triangle" class="alert-warning" />
+    @else
+        <section class="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+            <article class="glass-card card">
+                <div class="card-body gap-3">
+                    <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Periodo activo</p>
+                    <div class="space-y-1">
+                        <h2 class="card-title text-xl text-primary">{{ $periodoActivo?->nombre }}</h2>
+                        <p class="text-sm text-base-content/70">
+                            {{ $periodoActivo?->fecha_inicio?->format('d/m/Y') }} al {{ $periodoActivo?->fecha_fin?->format('d/m/Y') }}
+                        </p>
+                    </div>
+                </div>
+            </article>
+
+            <section class="grid grid-cols-2 gap-4">
+                <article class="glass-card card">
+                    <div class="card-body gap-1">
+                        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Disponibles</p>
+                        <p class="text-3xl font-semibold text-primary">{{ $docentes->count() }}</p>
+                        <p class="text-sm text-base-content/65">Docentes elegibles para evaluar</p>
+                    </div>
+                </article>
+
+                <article class="glass-card card">
+                    <div class="card-body gap-1">
+                        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Enviadas</p>
+                        <p class="text-3xl font-semibold text-secondary">{{ count($evaluadosEnPeriodoActivo) }}</p>
+                        <p class="text-sm text-base-content/65">Evaluaciones cargadas en el periodo activo</p>
+                    </div>
+                </article>
+            </section>
+        </section>
+
+        <section class="space-y-3">
+            <div class="space-y-1">
+                <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Carga disponible</p>
+                <h2 class="text-lg font-semibold text-base-content">Seleccioná un docente para completar tu evaluación</h2>
+            </div>
+
+            @if ($docentes->isEmpty())
+                <x-mary-alert title="Todavía no hay docentes locales asociados a tu contexto académico para este periodo." icon="o-information-circle" class="alert-info" />
+            @else
+                <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    @foreach ($docentes as $docente)
+                        @php
+                            $yaEvaluado = in_array($docente->id, $evaluadosEnPeriodoActivo, true);
+                        @endphp
+
+                        <article class="glass-card card">
+                            <div class="card-body gap-4">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="space-y-1">
+                                        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Docente habilitado</p>
+                                        <h3 class="card-title text-base text-base-content">{{ $docente->nombre }}</h3>
+                                        <p class="text-sm text-base-content/65">Documento: {{ $docente->documento ?? 'Sin dato' }}</p>
+                                    </div>
+
+                                    @if ($yaEvaluado)
+                                        <span class="badge badge-success badge-sm">Ya evaluado</span>
+                                    @else
+                                        <span class="badge badge-outline badge-sm">Pendiente</span>
+                                    @endif
+                                </div>
+
+                                @if ($yaEvaluado)
+                                    <button type="button" class="btn btn-disabled btn-outline">
+                                        Evaluación ya enviada
+                                    </button>
+                                @else
+                                    <a href="{{ route('alumno.evaluacion-docente.form', $docente) }}" class="btn btn-primary" wire:navigate>
+                                        Evaluar docente
+                                    </a>
+                                @endif
+                            </div>
+                        </article>
+                    @endforeach
+                </div>
+            @endif
+        </section>
+
+        <section class="space-y-3">
+            <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div class="space-y-1">
+                    <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Historial</p>
+                    <h2 class="text-lg font-semibold text-base-content">Tus evaluaciones por periodo</h2>
+                </div>
+
+                <label class="form-control w-full md:max-w-xs">
+                    <span class="label-text text-sm font-medium">Periodo</span>
+                    <select wire:model.live="selectedPeriodoId" class="select select-bordered w-full">
+                        @foreach ($periodos as $periodo)
+                            <option value="{{ $periodo->id }}">{{ $periodo->nombre }}</option>
+                        @endforeach
+                    </select>
+                </label>
+            </div>
+
+            @if ($evaluaciones->isEmpty())
+                <x-mary-alert title="No registrás evaluaciones para el periodo seleccionado." icon="o-information-circle" class="alert-info" />
+            @else
+                <div class="glass-card card">
+                    <div class="card-body overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Docente</th>
+                                    <th>Formulario</th>
+                                    <th class="text-center">Puntaje</th>
+                                    <th class="text-center">Estado</th>
+                                    <th>Fecha</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($evaluaciones as $evaluacion)
+                                    <tr class="hover">
+                                        <td class="font-medium">{{ $evaluacion->docente_nombre_snapshot }}</td>
+                                        <td>{{ $evaluacion->tipo_evaluador === 'alumno' ? 'Alumno' : 'Funcionario' }}</td>
+                                        <td class="text-center">{{ $evaluacion->puntaje_total }}</td>
+                                        <td class="text-center">
+                                            <span class="badge badge-success badge-sm">{{ ucfirst($evaluacion->estado) }}</span>
+                                        </td>
+                                        <td>{{ $evaluacion->fecha_envio?->format('d/m/Y H:i') ?? 'Sin envío' }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            @endif
+        </section>
+    @endif
+</div>
