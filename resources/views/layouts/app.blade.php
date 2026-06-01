@@ -1,4 +1,6 @@
 @php
+    use App\Enums\RoleName;
+
     $theme = request()->cookie('une-theme');
     $theme = in_array($theme, ['uneTheme', 'uneThemeDark'], true) ? $theme : 'uneTheme';
 @endphp
@@ -38,15 +40,16 @@
                 data-particles
                 data-particles-opacity="0.20"
                 data-particles-line-opacity="0.30"
-                data-particles-count-desktop="30"
-                data-particles-count-mobile="10"
+            data-particles-count-desktop="72"
+            data-particles-count-mobile="24"
                 data-particles-dist="110"
                 class="fixed inset-0 w-full h-full pointer-events-none"
                 style="z-index: 0"></canvas>
 
         @php
-            $isAlumno = auth()->user()?->hasRole('ALUMNO') ?? false;
-            $isAdmin = auth()->user()?->hasRole('ADMIN') ?? false;
+            $isAlumno = auth()->user()?->hasRole(RoleName::Alumno->value) ?? false;
+            $isAdmin = auth()->user()?->hasAnyRole(RoleName::administrationValues()) ?? false;
+            $isGeneralAdmin = auth()->user()?->hasRole(RoleName::Admin->value) ?? false;
 
             $navigationLinks = [
                 'home' => [
@@ -147,7 +150,10 @@
                             <x-menu-item title="Dashboard Admin" icon="o-chart-bar" link="{{ route('admin.dashboard') }}" />
                             <x-menu-item title="Consulta Alumnos" icon="o-magnifying-glass" link="{{ route('admin.consulta-alumno') }}" />
                             <x-menu-item title="Docentes Evaluación" icon="o-clipboard-document-list" link="{{ route('admin.evaluacion-docente.docentes') }}" />
-                            <x-menu-item title="Config. Eval Docente" icon="o-adjustments-horizontal" link="{{ route('admin.evaluacion-docente.configuracion') }}" />
+                            @if ($isGeneralAdmin)
+                                <x-menu-item title="Admins por Facultad" icon="o-user-group" link="{{ route('admin.academic-unit-admins') }}" />
+                                <x-menu-item title="Config. Eval Docente" icon="o-adjustments-horizontal" link="{{ route('admin.evaluacion-docente.configuracion') }}" />
+                            @endif
                         </x-menu-sub>
                     @endif
 

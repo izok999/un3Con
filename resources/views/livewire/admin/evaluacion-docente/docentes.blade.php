@@ -1,10 +1,13 @@
 <?php
 
+use App\Enums\RoleName;
 use App\Models\Docente;
 use App\Models\DocenteContexto;
+use App\Models\User;
 use App\Services\AlumnoExternoService;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
@@ -46,6 +49,9 @@ new #[Layout('layouts.app')] class extends Component
     /** @var array<int, string> */
     public array $catMaterias = [];
 
+    /** @var array<int, int> */
+    public array $allowedSedeIds = [];
+
     public function boot(): void
     {
         $this->docentes = collect();
@@ -55,6 +61,7 @@ new #[Layout('layouts.app')] class extends Component
     {
         $this->resetDocenteForm();
         $this->resetContextoForm();
+        $this->allowedSedeIds = $this->resolveAllowedSedeIds();
 
         $this->schemaReady = $this->schemaIsReady();
 
@@ -93,7 +100,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public function editDocente(int $docenteId): void
     {
-        $docente = Docente::query()->findOrFail($docenteId);
+        $docente = $this->findAccessibleDocenteOrFail($docenteId);
 
         $this->editingDocenteId = $docente->id;
         $this->selectedDocenteId = $docente->id;
@@ -103,6 +110,8 @@ new #[Layout('layouts.app')] class extends Component
 
     public function selectDocente(int $docenteId): void
     {
+        $this->findAccessibleDocenteOrFail($docenteId);
+
         $this->selectedDocenteId = $docenteId;
         $this->resetContextoForm();
         $this->resetValidation();
@@ -123,7 +132,7 @@ new #[Layout('layouts.app')] class extends Component
         ];
 
         if ($this->editingDocenteId) {
-            $docente = Docente::query()->findOrFail($this->editingDocenteId);
+            $docente = $this->findAccessibleDocenteOrFail($this->editingDocenteId);
             $docente->fill($payload)->save();
             $message = 'Docente actualizado correctamente.';
         } else {
@@ -165,6 +174,12 @@ new #[Layout('layouts.app')] class extends Component
             'activo' => (bool) ($validated['contextoForm']['activo'] ?? false),
         ];
 
+        if ($this->isScopedAcademicAdmin() && ! $this->canManageSede($payload['sed_id'])) {
+            $this->addError('contextoForm.sed_id', 'Solo podés asignar contextos dentro de tus sedes habilitadas.');
+
+            return;
+        }
+
         $hasAtLeastOneScope = collect($payload)
             ->except('activo')
             ->contains(fn (mixed $value): bool => $value !== null);
@@ -203,7 +218,13 @@ new #[Layout('layouts.app')] class extends Component
             return;
         }
 
-        DocenteContexto::query()->whereKey($contextoId)->delete();
+        $contexto = DocenteContexto::query()->findOrFail($contextoId);
+
+        if ($this->isScopedAcademicAdmin() && ! $this->canManageSede($contexto->sed_id)) {
+            abort(403, 'No podés eliminar contextos fuera de tus sedes habilitadas.');
+        }
+
+        $contexto->delete();
 
         $this->loadDocentes();
         session()->flash('status', 'Contexto eliminado correctamente.');
@@ -224,6 +245,10 @@ new #[Layout('layouts.app')] class extends Component
             $this->catPeriodos = $service->catPeriodos();
             $this->catTurnos = $service->catTurnos();
             $this->catSecciones = $service->catSecciones();
+
+            if ($this->isScopedAcademicAdmin()) {
+                $this->catSedes = array_intersect_key($this->catSedes, array_flip($this->allowedSedeIds));
+            }
         } catch (\Throwable) {
             // Si la base externa no está disponible los catálogos quedan vacíos
         }
@@ -259,12 +284,30 @@ new #[Layout('layouts.app')] class extends Component
         $query = Docente::query()
             ->with([
                 'contextos' => fn ($contextosQuery) => $contextosQuery
+                    ->when(
+                        $this->isScopedAcademicAdmin(),
+                        fn ($scopedQuery) => $scopedQuery->whereIn('sed_id', $this->allowedSedeIds),
+                    )
                     ->orderByDesc('activo')
                     ->orderBy('id'),
             ])
-            ->withCount('contextos')
+            ->withCount([
+                'contextos' => fn ($contextosQuery) => $contextosQuery
+                    ->when(
+                        $this->isScopedAcademicAdmin(),
+                        fn ($scopedQuery) => $scopedQuery->whereIn('sed_id', $this->allowedSedeIds),
+                    ),
+            ])
             ->orderByDesc('activo')
             ->orderBy('nombre');
+
+        if ($this->isScopedAcademicAdmin()) {
+            $query->where(function ($builder): void {
+                $builder
+                    ->doesntHave('contextos')
+                    ->orWhereHas('contextos', fn ($contextosQuery) => $contextosQuery->whereIn('sed_id', $this->allowedSedeIds));
+            });
+        }
 
         if ($search !== '') {
             $searchLike = '%'.$search.'%';
@@ -308,9 +351,15 @@ new #[Layout('layouts.app')] class extends Component
 
     protected function contextoRules(): array
     {
+        $sedIdRules = ['nullable', 'integer', 'min:1'];
+
+        if ($this->isScopedAcademicAdmin()) {
+            $sedIdRules = ['required', 'integer', 'min:1', Rule::in($this->allowedSedeIds)];
+        }
+
         return [
             'contextoForm.car_id' => ['nullable', 'integer', 'min:1'],
-            'contextoForm.sed_id' => ['nullable', 'integer', 'min:1'],
+            'contextoForm.sed_id' => $sedIdRules,
             'contextoForm.ple_id' => ['nullable', 'integer', 'min:1'],
             'contextoForm.mi2_id' => ['nullable', 'integer', 'min:1'],
             'contextoForm.tur_id' => ['nullable', 'integer', 'min:1'],
@@ -371,6 +420,56 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         return (int) $value;
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    protected function resolveAllowedSedeIds(): array
+    {
+        /** @var ?User $user */
+        $user = Auth::user();
+
+        if (! $user || ! $user->hasRole(RoleName::AdminUnidadAcademica->value)) {
+            return [];
+        }
+
+        return $user->managedSedeIds();
+    }
+
+    protected function isScopedAcademicAdmin(): bool
+    {
+        /** @var ?User $user */
+        $user = Auth::user();
+
+        return $user?->hasRole(RoleName::AdminUnidadAcademica->value) ?? false;
+    }
+
+    protected function canManageSede(?int $sedId): bool
+    {
+        if (! $this->isScopedAcademicAdmin()) {
+            return true;
+        }
+
+        if ($sedId === null) {
+            return false;
+        }
+
+        return in_array($sedId, $this->allowedSedeIds, true);
+    }
+
+    protected function findAccessibleDocenteOrFail(int $docenteId): Docente
+    {
+        return Docente::query()
+            ->when(
+                $this->isScopedAcademicAdmin(),
+                fn ($query) => $query->where(function ($builder): void {
+                    $builder
+                        ->doesntHave('contextos')
+                        ->orWhereHas('contextos', fn ($contextosQuery) => $contextosQuery->whereIn('sed_id', $this->allowedSedeIds));
+                }),
+            )
+            ->findOrFail($docenteId);
     }
 
     protected function isUniqueConstraintViolation(QueryException $exception): bool

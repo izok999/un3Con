@@ -2,8 +2,11 @@
 
 namespace Tests\Feature\Admin;
 
+use App\Models\AcademicUnit;
 use App\Models\Docente;
 use App\Models\User;
+use App\Models\UserAcademicUnitScope;
+use Database\Seeders\AcademicUnitSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
 use Spatie\Permission\Models\Role;
@@ -20,6 +23,43 @@ class AdminEvaluacionDocenteManagementTest extends TestCase
         /** @var User $user */
         $user = User::factory()->create();
         $user->assignRole('ADMIN');
+
+        return $user;
+    }
+
+    protected function unitAdminUser(array $sedeIds = [8]): User
+    {
+        Role::findOrCreate('ADMIN_UNIDAD_ACADEMICA', 'web');
+
+        /** @var User $user */
+        $user = User::factory()->create();
+        $user->assignRole('ADMIN_UNIDAD_ACADEMICA');
+
+        foreach ($sedeIds as $sedeId) {
+            UserAcademicUnitScope::query()->create([
+                'user_id' => $user->id,
+                'sed_id' => $sedeId,
+            ]);
+        }
+
+        return $user;
+    }
+
+    protected function unitAdminForAcademicUnit(string $slug): User
+    {
+        Role::findOrCreate('ADMIN_UNIDAD_ACADEMICA', 'web');
+
+        /** @var User $user */
+        $user = User::factory()->create();
+        $user->assignRole('ADMIN_UNIDAD_ACADEMICA');
+
+        $academicUnit = AcademicUnit::query()->where('slug', $slug)->firstOrFail();
+
+        UserAcademicUnitScope::query()->create([
+            'user_id' => $user->id,
+            'academic_unit_id' => $academicUnit->id,
+            'sed_id' => $academicUnit->legacy_sede_ids[0],
+        ]);
 
         return $user;
     }
@@ -91,6 +131,109 @@ class AdminEvaluacionDocenteManagementTest extends TestCase
             'tur_id' => 2,
             'sec_id' => 4,
             'activo' => true,
+        ]);
+    }
+
+    public function test_unit_admin_can_access_the_management_screen_when_scoped(): void
+    {
+        $unitAdmin = $this->unitAdminUser([8]);
+
+        $this->actingAs($unitAdmin)
+            ->get(route('admin.evaluacion-docente.docentes'))
+            ->assertOk()
+            ->assertSee('Docentes para Evaluación')
+            ->assertSee(route('admin.consulta-alumno'), false)
+            ->assertDontSee(route('admin.academic-unit-admins'), false)
+            ->assertDontSee(route('admin.evaluacion-docente.configuracion'), false);
+    }
+
+    public function test_unit_admin_can_only_add_contexts_for_assigned_sedes(): void
+    {
+        $unitAdmin = $this->unitAdminUser([8]);
+
+        $docente = Docente::query()->create([
+            'nombre' => 'Margaret Hamilton',
+            'documento' => '5555555',
+            'docente_externo_id' => 9104,
+            'activo' => true,
+        ]);
+
+        $this->actingAs($unitAdmin);
+
+        Volt::test('admin.evaluacion-docente.docentes')
+            ->call('selectDocente', $docente->id)
+            ->set('contextoForm.sed_id', '8')
+            ->set('contextoForm.ple_id', '2026')
+            ->call('saveContexto')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('docente_contextos', [
+            'docente_id' => $docente->id,
+            'sed_id' => 8,
+        ]);
+
+        Volt::test('admin.evaluacion-docente.docentes')
+            ->call('selectDocente', $docente->id)
+            ->set('contextoForm.sed_id', '9')
+            ->set('contextoForm.ple_id', '2026')
+            ->call('saveContexto')
+            ->assertHasErrors(['contextoForm.sed_id']);
+
+        $this->assertDatabaseMissing('docente_contextos', [
+            'docente_id' => $docente->id,
+            'sed_id' => 9,
+        ]);
+    }
+
+    public function test_unit_admin_scope_by_faculty_expands_to_all_legacy_sedes_of_that_faculty(): void
+    {
+        $this->seed(AcademicUnitSeeder::class);
+
+        $unitAdmin = $this->unitAdminForAcademicUnit('ingenieria-agronomica');
+
+        $docente = Docente::query()->create([
+            'nombre' => 'Norman Borlaug',
+            'documento' => '6666666',
+            'docente_externo_id' => 9105,
+            'activo' => true,
+        ]);
+
+        $this->actingAs($unitAdmin);
+
+        Volt::test('admin.evaluacion-docente.docentes')
+            ->call('selectDocente', $docente->id)
+            ->set('contextoForm.sed_id', '1')
+            ->set('contextoForm.ple_id', '2026')
+            ->call('saveContexto')
+            ->assertHasNoErrors();
+
+        Volt::test('admin.evaluacion-docente.docentes')
+            ->call('selectDocente', $docente->id)
+            ->set('contextoForm.sed_id', '8')
+            ->set('contextoForm.ple_id', '2026')
+            ->call('saveContexto')
+            ->assertHasNoErrors();
+
+        Volt::test('admin.evaluacion-docente.docentes')
+            ->call('selectDocente', $docente->id)
+            ->set('contextoForm.sed_id', '3')
+            ->set('contextoForm.ple_id', '2026')
+            ->call('saveContexto')
+            ->assertHasErrors(['contextoForm.sed_id']);
+
+        $this->assertDatabaseHas('docente_contextos', [
+            'docente_id' => $docente->id,
+            'sed_id' => 1,
+        ]);
+
+        $this->assertDatabaseHas('docente_contextos', [
+            'docente_id' => $docente->id,
+            'sed_id' => 8,
+        ]);
+
+        $this->assertDatabaseMissing('docente_contextos', [
+            'docente_id' => $docente->id,
+            'sed_id' => 3,
         ]);
     }
 }

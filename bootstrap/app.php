@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureAcademicUnitScope;
 use App\Http\Middleware\EnsureLegacyUserHasCompletedAccount;
 use App\Http\Middleware\EnsureOAuthUserHasDocumento;
 use App\Http\Middleware\SetLocale;
@@ -22,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->alias([
+            'academic.unit.scope' => EnsureAcademicUnitScope::class,
             'legacy.account.complete' => EnsureLegacyUserHasCompletedAccount::class,
             'oauth.documento' => EnsureOAuthUserHasDocumento::class,
             'role' => RoleMiddleware::class,

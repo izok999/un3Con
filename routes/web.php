@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\RoleName;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -30,7 +31,11 @@ Route::post('/locale', function (Request $request) {
 
 // Bienvenida — solo ADMIN o FUNCIONARIO
 Route::get('/bienvenida', fn () => view('welcome'))
-    ->middleware(['auth', 'role:ADMIN|FUNCIONARIO'])
+    ->middleware(['auth', 'role:'.RoleName::middleware(
+        RoleName::Admin,
+        RoleName::AdminUnidadAcademica,
+        RoleName::Funcionario,
+    )])
     ->name('welcome');
 
 Route::view('dashboard', 'dashboard')
@@ -42,7 +47,7 @@ Route::view('profile', 'profile')
     ->name('profile');
 
 // Portal del alumno — solo rol ALUMNO
-Route::middleware(['auth', 'legacy.account.complete', 'oauth.documento', 'role:ALUMNO'])->group(function () {
+Route::middleware(['auth', 'legacy.account.complete', 'oauth.documento', 'role:'.RoleName::Alumno->value])->group(function () {
     Volt::route('/mis-carreras', 'alumno.mis-carreras')->name('alumno.carreras');
     Volt::route('/mis-carreras/{halId}', 'alumno.detalle-carrera')->name('alumno.carreras.show');
     Volt::route('/extracto-academico', 'alumno.extracto-academico')->name('alumno.extracto');
@@ -52,11 +57,23 @@ Route::middleware(['auth', 'legacy.account.complete', 'oauth.documento', 'role:A
     Volt::route('/mis-deudas', 'alumno.mis-deudas')->name('alumno.deudas');
 });
 
-// Panel de administración — solo rol ADMIN
-Route::middleware(['auth', 'role:ADMIN'])->group(function () {
+// Panel de administración — ADMIN general o por unidad académica
+Route::middleware([
+    'auth',
+    'role:'.RoleName::middleware(
+        RoleName::Admin,
+        RoleName::AdminUnidadAcademica,
+    ),
+    'academic.unit.scope',
+])->group(function () {
     Route::get('/admin', fn () => view('dashboard'))->name('admin.dashboard');
     Volt::route('/admin/consulta-alumno', 'admin.consulta-alumno')->name('admin.consulta-alumno');
     Volt::route('/admin/evaluacion-docente/docentes', 'admin.evaluacion-docente.docentes')->name('admin.evaluacion-docente.docentes');
+});
+
+// Panel de administración global — solo ADMIN general
+Route::middleware(['auth', 'role:'.RoleName::Admin->value])->group(function () {
+    Volt::route('/admin/administradores-unidades', 'admin.administradores-unidades')->name('admin.academic-unit-admins');
     Volt::route('/admin/evaluacion-docente/configuracion', 'admin.evaluacion-docente.configuracion')->name('admin.evaluacion-docente.configuracion');
 });
 
