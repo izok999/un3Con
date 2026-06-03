@@ -49,7 +49,7 @@ Definidos en ambos temas vía variables DaisyUI:
 
 ## Fondo con patrón
 
-Clase `.bg-app-pattern` — gradiente diagonal verde→dorado con puntos blancos semitransparentes.
+Clase `.bg-app-pattern` — fondo claro blanco con degradado sutil y puntos blancos/grises semitransparentes.
 
 ```html
 <body class="bg-app-pattern">
