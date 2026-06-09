@@ -158,6 +158,12 @@
                     @endif
 
                     <x-menu-separator />
+                    <x-menu-item
+                        title="Normativas"
+                        icon="o-scale"
+                        link="{{ route('normativas.index') }}"
+                        route="normativas.index"
+                    />
                     <x-menu-item title="Mi Perfil" icon="o-user" link="{{ route('profile') }}" />
                 </x-menu>
             </x-slot:sidebar>

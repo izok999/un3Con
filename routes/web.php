@@ -46,6 +46,13 @@ Route::view('profile', 'profile')
     ->middleware(['auth', 'legacy.account.complete', 'oauth.documento'])
     ->name('profile');
 
+// Normativas / marco legal — disponible para cualquier usuario autenticado
+Route::get('/normativas', fn () => view('pages.normativas.index', [
+    'secciones' => config('normativas'),
+]))
+    ->middleware(['auth', 'legacy.account.complete', 'oauth.documento'])
+    ->name('normativas.index');
+
 // Portal del alumno — solo rol ALUMNO
 Route::middleware(['auth', 'legacy.account.complete', 'oauth.documento', 'role:'.RoleName::Alumno->value])->group(function () {
     Volt::route('/mis-carreras', 'alumno.mis-carreras')->name('alumno.carreras');

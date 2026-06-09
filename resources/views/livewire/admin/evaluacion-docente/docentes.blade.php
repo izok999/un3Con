@@ -10,6 +10,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -48,6 +49,17 @@ new #[Layout('layouts.app')] class extends Component
 
     /** @var array<int, string> */
     public array $catMaterias = [];
+
+    /**
+     * Contextos del docente seleccionado en el sistema externo (BD legacy).
+     *
+     * @var array<int, array{car_id: int|null, sed_id: int|null, ple_id: int|null, mi2_id: int|null, tur_id: int|null, sec_id: int|null}>
+     */
+    public array $contextosExternos = [];
+
+    public string $filtroPleCodigo = '';
+
+    public bool $showManualForm = false;
 
     /** @var array<int, int> */
     public array $allowedSedeIds = [];
@@ -92,6 +104,34 @@ new #[Layout('layouts.app')] class extends Component
         $this->loadDocentes();
     }
 
+    public function updatedContextoForm(mixed $value, string $key): void
+    {
+        match ($key) {
+            'sed_id' => $this->resetContextoFormCascade('car_id', 'mi2_id', 'ple_id', 'tur_id', 'sec_id'),
+            'car_id' => $this->resetContextoFormCascade('mi2_id', 'ple_id', 'tur_id', 'sec_id'),
+            'mi2_id' => $this->resetContextoFormCascade('ple_id', 'tur_id', 'sec_id'),
+            'ple_id' => $this->resetContextoFormCascade('tur_id', 'sec_id'),
+            'tur_id' => $this->resetContextoFormCascade('sec_id'),
+            default => null,
+        };
+    }
+
+    public function onContextoFieldChanged(string $field, string $value): void
+    {
+        $this->contextoForm[$field] = $value;
+
+        $cascade = match ($field) {
+            'sed_id' => ['car_id', 'mi2_id', 'ple_id', 'tur_id', 'sec_id'],
+            'car_id' => ['mi2_id', 'ple_id', 'tur_id', 'sec_id'],
+            'mi2_id' => ['ple_id', 'tur_id', 'sec_id'],
+            'ple_id' => ['tur_id', 'sec_id'],
+            'tur_id' => ['sec_id'],
+            default => [],
+        };
+
+        $this->resetContextoFormCascade(...$cascade);
+    }
+
     public function createNewDocente(): void
     {
         $this->resetDocenteForm();
@@ -110,11 +150,18 @@ new #[Layout('layouts.app')] class extends Component
 
     public function selectDocente(int $docenteId): void
     {
-        $this->findAccessibleDocenteOrFail($docenteId);
+        $docente = $this->findAccessibleDocenteOrFail($docenteId);
 
         $this->selectedDocenteId = $docenteId;
+        $this->contextosExternos = [];
+        $this->filtroPleCodigo = '';
+        $this->showManualForm = true;
         $this->resetContextoForm();
         $this->resetValidation();
+
+        if (filled($docente->documento)) {
+            $this->loadContextosExternos($docente->documento);
+        }
     }
 
     public function saveDocente(): void
@@ -251,6 +298,164 @@ new #[Layout('layouts.app')] class extends Component
             }
         } catch (\Throwable) {
             // Si la base externa no está disponible los catálogos quedan vacíos
+        }
+    }
+
+    protected function loadContextosExternos(string $documento): void
+    {
+        try {
+            $service = app(AlumnoExternoService::class);
+
+            $contextos = $service->contextosDocentePorDocumento($documento)
+                ->sortByDesc('ple_id')
+                ->values()
+                ->all();
+
+            // Enrich catMaterias with names for mi2_ids not yet loaded
+            $mi2Ids = collect($contextos)->pluck('mi2_id')->filter()->unique()->values()->all();
+            $missing = array_diff($mi2Ids, array_keys($this->catMaterias));
+
+            if (! empty($missing)) {
+                $this->catMaterias = array_merge($this->catMaterias, $service->catMateriasPorIds($missing));
+            }
+
+            $this->contextosExternos = $contextos;
+            $this->showManualForm = empty($contextos);
+        } catch (\Throwable) {
+            $this->contextosExternos = [];
+            $this->showManualForm = true;
+        }
+    }
+
+    /**
+     * Sedes available for the form (scoped for unit admins).
+     *
+     * @return array<int, string>
+     */
+    #[Computed]
+    public function formSedes(): array
+    {
+        $sedes = $this->catSedes;
+
+        if ($this->isScopedAcademicAdmin() && ! empty($this->allowedSedeIds)) {
+            $sedes = array_intersect_key($sedes, array_flip($this->allowedSedeIds));
+        }
+
+        return $sedes;
+    }
+
+    /**
+     * Carreras available for the selected sede (full external catalogue).
+     *
+     * @return array<int, string>
+     */
+    #[Computed]
+    public function formCarreras(): array
+    {
+        $sedId = $this->normalizeNullableInt($this->contextoForm['sed_id'] ?? null);
+
+        if ($sedId === null) {
+            return $this->catCarreras;
+        }
+
+        try {
+            return app(AlumnoExternoService::class)->catCarrerasPorSede($sedId);
+        } catch (\Throwable) {
+            return $this->catCarreras;
+        }
+    }
+
+    /**
+     * Materias available for the selected sede + carrera (full external catalogue).
+     *
+     * @return array<int, string>
+     */
+    #[Computed]
+    public function formMaterias(): array
+    {
+        $sedId = $this->normalizeNullableInt($this->contextoForm['sed_id'] ?? null);
+        $carId = $this->normalizeNullableInt($this->contextoForm['car_id'] ?? null);
+
+        if ($sedId === null || $carId === null) {
+            return $this->catMaterias;
+        }
+
+        try {
+            return app(AlumnoExternoService::class)->catMateriasPorCarreraYSede($carId, $sedId);
+        } catch (\Throwable) {
+            return $this->catMaterias;
+        }
+    }
+
+    /**
+     * Periodos for selected sede + carrera (+ optional materia).
+     *
+     * @return array<int, string>
+     */
+    #[Computed]
+    public function formPeriodos(): array
+    {
+        $sedId = $this->normalizeNullableInt($this->contextoForm['sed_id'] ?? null);
+        $carId = $this->normalizeNullableInt($this->contextoForm['car_id'] ?? null);
+        $mi2Id = $this->normalizeNullableInt($this->contextoForm['mi2_id'] ?? null);
+
+        if ($sedId === null || $carId === null) {
+            return $this->catPeriodos;
+        }
+
+        try {
+            return app(AlumnoExternoService::class)->catPeriodosPorCarreraYSede($carId, $sedId, $mi2Id);
+        } catch (\Throwable) {
+            return $this->catPeriodos;
+        }
+    }
+
+    /**
+     * Turnos for selected sede + carrera (+ optional materia, periodo).
+     *
+     * @return array<int, string>
+     */
+    #[Computed]
+    public function formTurnos(): array
+    {
+        $sedId = $this->normalizeNullableInt($this->contextoForm['sed_id'] ?? null);
+        $carId = $this->normalizeNullableInt($this->contextoForm['car_id'] ?? null);
+        $mi2Id = $this->normalizeNullableInt($this->contextoForm['mi2_id'] ?? null);
+        $pleId = $this->normalizeNullableInt($this->contextoForm['ple_id'] ?? null);
+
+        if ($sedId === null || $carId === null) {
+            return $this->catTurnos;
+        }
+
+        try {
+            return app(AlumnoExternoService::class)->catTurnosPorCarreraYSede($carId, $sedId, $mi2Id, $pleId);
+        } catch (\Throwable) {
+            return $this->catTurnos;
+        }
+    }
+
+    /**
+     * Secciones for selected sede + carrera (+ optional materia, periodo, turno).
+     *
+     * @return array<int, string>
+     */
+    #[Computed]
+    public function formSecciones(): array
+    {
+        $sedId = $this->normalizeNullableInt($this->contextoForm['sed_id'] ?? null);
+        $carId = $this->normalizeNullableInt($this->contextoForm['car_id'] ?? null);
+        $mi2Id = $this->normalizeNullableInt($this->contextoForm['mi2_id'] ?? null);
+        $pleId = $this->normalizeNullableInt($this->contextoForm['ple_id'] ?? null);
+        $turId = $this->normalizeNullableInt($this->contextoForm['tur_id'] ?? null);
+
+        if ($sedId === null || $carId === null) {
+            return $this->catSecciones;
+        }
+
+        try {
+            return app(AlumnoExternoService::class)->catSeccionesPorCarreraYSede($carId, $sedId, $mi2Id, $pleId, $turId);
+        } catch (\Throwable) {
+            return $this->catSecciones;
         }
     }
 
@@ -402,6 +607,13 @@ new #[Layout('layouts.app')] class extends Component
         ];
     }
 
+    protected function resetContextoFormCascade(string ...$fields): void
+    {
+        foreach ($fields as $field) {
+            $this->contextoForm[$field] = '';
+        }
+    }
+
     protected function normalizeNullableString(mixed $value): ?string
     {
         if (! is_string($value)) {
@@ -470,6 +682,108 @@ new #[Layout('layouts.app')] class extends Component
                 }),
             )
             ->findOrFail($docenteId);
+    }
+
+    public function importarContextoExterno(int $index): void
+    {
+        if (! $this->schemaReady || ! $this->selectedDocenteId) {
+            return;
+        }
+
+        if (! isset($this->contextosExternos[$index])) {
+            return;
+        }
+
+        $ctx = $this->contextosExternos[$index];
+
+        if ($this->isScopedAcademicAdmin() && ! $this->canManageSede($ctx['sed_id'])) {
+            $this->addError("importar_{$index}", 'Este contexto pertenece a una sede fuera de tu scope.');
+
+            return;
+        }
+
+        DocenteContexto::firstOrCreate(
+            [
+                'docente_id' => $this->selectedDocenteId,
+                'car_id' => $ctx['car_id'],
+                'sed_id' => $ctx['sed_id'],
+                'ple_id' => $ctx['ple_id'],
+                'mi2_id' => $ctx['mi2_id'],
+                'tur_id' => $ctx['tur_id'],
+                'sec_id' => $ctx['sec_id'],
+            ],
+            ['activo' => true],
+        );
+
+        $this->loadDocentes();
+        session()->flash('status', 'Contexto importado correctamente.');
+    }
+
+    public function toggleManualForm(): void
+    {
+        $this->showManualForm = ! $this->showManualForm;
+    }
+
+    public function sincronizarContextosDocente(int $docenteId): void
+    {
+        if (! $this->schemaReady) {
+            return;
+        }
+
+        $docente = $this->findAccessibleDocenteOrFail($docenteId);
+
+        if (blank($docente->documento)) {
+            $this->addError("sync_{$docenteId}", 'El docente no tiene documento registrado para consultar el sistema externo.');
+
+            return;
+        }
+
+        try {
+            $contextos = app(AlumnoExternoService::class)->contextosDocentePorDocumento($docente->documento);
+        } catch (\Throwable) {
+            $this->addError("sync_{$docenteId}", 'No se pudo conectar al sistema externo.');
+
+            return;
+        }
+
+        if ($contextos->isEmpty()) {
+            session()->flash('status', "Sin datos externos para {$docente->nombre}. No se encontraron asignaciones en el sistema.");
+
+            return;
+        }
+
+        $created = 0;
+
+        foreach ($contextos as $ctx) {
+            $contexto = DocenteContexto::firstOrCreate(
+                [
+                    'docente_id' => $docente->id,
+                    'car_id' => $ctx['car_id'],
+                    'sed_id' => $ctx['sed_id'],
+                    'ple_id' => $ctx['ple_id'],
+                    'mi2_id' => $ctx['mi2_id'],
+                    'tur_id' => $ctx['tur_id'],
+                    'sec_id' => $ctx['sec_id'],
+                ],
+                ['activo' => true],
+            );
+
+            if ($contexto->wasRecentlyCreated) {
+                $created++;
+            }
+        }
+
+        $this->loadDocentes();
+
+        $total = $contextos->count();
+        $skipped = $total - $created;
+        $msg = "Sincronizacion completa: {$created} contexto(s) nuevo(s) importado(s)";
+
+        if ($skipped > 0) {
+            $msg .= ", {$skipped} ya existian.";
+        }
+
+        session()->flash('status', $msg);
     }
 
     protected function isUniqueConstraintViolation(QueryException $exception): bool
@@ -588,6 +902,7 @@ new #[Layout('layouts.app')] class extends Component
                     @if (! $this->selectedDocente)
                         <x-mary-alert title="Seleccioná un docente desde el listado para asociar su contexto académico." icon="o-information-circle" class="alert-info" />
                     @else
+                        {{-- Docente info --}}
                         <div class="rounded-2xl border border-base-300 bg-base-200/40 p-4">
                             <p class="text-sm font-semibold text-base-content">{{ $this->selectedDocente->nombre }}</p>
                             <p class="text-sm text-base-content/65">
@@ -596,98 +911,232 @@ new #[Layout('layouts.app')] class extends Component
                             </p>
                         </div>
 
-                        <form wire:submit="saveContexto" class="space-y-4">
-                            <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                                <label class="form-control w-full">
-                                    <span class="label-text text-sm font-medium">Carrera</span>
-                                    <select wire:model="contextoForm.car_id" class="select select-bordered w-full">
-                                        <option value="">— Cualquier carrera —</option>
-                                        @foreach ($catCarreras as $id => $nombre)
-                                            <option value="{{ $id }}">{{ $nombre }}</option>
-                                        @endforeach
-                                    </select>
-                                    @error('contextoForm.car_id')
-                                        <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
-                                    @enderror
-                                </label>
+                        {{-- External assignments from legacy --}}
+                        @if (! empty($contextosExternos))
+                            <div class="space-y-3">
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <p class="text-sm font-semibold text-base-content">Asignaciones en el sistema externo</p>
 
-                                <label class="form-control w-full">
-                                    <span class="label-text text-sm font-medium">Sede</span>
-                                    <select wire:model="contextoForm.sed_id" class="select select-bordered w-full">
-                                        <option value="">— Cualquier sede —</option>
-                                        @foreach ($catSedes as $id => $nombre)
-                                            <option value="{{ $id }}">{{ $nombre }}</option>
-                                        @endforeach
-                                    </select>
-                                    @error('contextoForm.sed_id')
-                                        <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
-                                    @enderror
-                                </label>
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <select wire:model.live="filtroPleCodigo" class="select select-bordered select-sm">
+                                            <option value="">Todos los períodos</option>
+                                            @foreach (collect($contextosExternos)->pluck('ple_id')->filter()->unique()->sortDesc()->values() as $pleId)
+                                                <option value="{{ $pleId }}">{{ $catPeriodos[$pleId] ?? "Período {$pleId}" }}</option>
+                                            @endforeach
+                                        </select>
 
-                                <label class="form-control w-full">
-                                    <span class="label-text text-sm font-medium">Período lectivo</span>
-                                    <select wire:model="contextoForm.ple_id" class="select select-bordered w-full">
-                                        <option value="">— Cualquier período —</option>
-                                        @foreach ($catPeriodos as $id => $nombre)
-                                            <option value="{{ $id }}">{{ $nombre }}</option>
-                                        @endforeach
-                                    </select>
-                                    @error('contextoForm.ple_id')
-                                        <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
-                                    @enderror
-                                </label>
+                                        <button
+                                            type="button"
+                                            wire:click="sincronizarContextosDocente({{ $this->selectedDocente->id }})"
+                                            wire:loading.attr="disabled"
+                                            wire:target="sincronizarContextosDocente({{ $this->selectedDocente->id }})"
+                                            class="btn btn-secondary btn-sm"
+                                        >
+                                            <span wire:loading.remove wire:target="sincronizarContextosDocente({{ $this->selectedDocente->id }})">Importar todos</span>
+                                            <span wire:loading wire:target="sincronizarContextosDocente({{ $this->selectedDocente->id }})" class="loading loading-spinner loading-xs"></span>
+                                        </button>
+                                    </div>
+                                </div>
 
-                                <label class="form-control w-full">
-                                    <span class="label-text text-sm font-medium">Materia (ID)</span>
-                                    <input wire:model="contextoForm.mi2_id" type="number" min="1" class="input input-bordered w-full" placeholder="ID de materia" />
-                                    @error('contextoForm.mi2_id')
-                                        <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
-                                    @enderror
-                                </label>
+                                @php
+                                    $importedFingerprints = ($this->selectedDocente->contextos ?? collect())
+                                        ->map(fn ($c) => "{$c->car_id}|{$c->sed_id}|{$c->ple_id}|{$c->mi2_id}|{$c->tur_id}|{$c->sec_id}")
+                                        ->all();
+                                    $filteredContextos = collect($contextosExternos)
+                                        ->when(
+                                            $filtroPleCodigo !== '',
+                                            fn ($col) => $col->filter(fn ($c) => (string) ($c['ple_id'] ?? '') === $filtroPleCodigo),
+                                        )
+                                        ->all();
+                                @endphp
 
-                                <label class="form-control w-full">
-                                    <span class="label-text text-sm font-medium">Turno</span>
-                                    <select wire:model="contextoForm.tur_id" class="select select-bordered w-full">
-                                        <option value="">— Cualquier turno —</option>
-                                        @foreach ($catTurnos as $id => $nombre)
-                                            <option value="{{ $id }}">{{ $nombre }}</option>
-                                        @endforeach
-                                    </select>
-                                    @error('contextoForm.tur_id')
-                                        <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
-                                    @enderror
-                                </label>
-
-                                <label class="form-control w-full">
-                                    <span class="label-text text-sm font-medium">Sección</span>
-                                    <select wire:model="contextoForm.sec_id" class="select select-bordered w-full">
-                                        <option value="">— Cualquier sección —</option>
-                                        @foreach ($catSecciones as $id => $nombre)
-                                            <option value="{{ $id }}">{{ $nombre }}</option>
-                                        @endforeach
-                                    </select>
-                                    @error('contextoForm.sec_id')
-                                        <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
-                                    @enderror
-                                </label>
+                                <div class="overflow-x-auto rounded-2xl border border-base-300 bg-base-100/70">
+                                    <table class="table table-sm">
+                                        <thead>
+                                            <tr>
+                                                <th>Materia</th>
+                                                <th>Período</th>
+                                                <th>Sede · Turno · Sección</th>
+                                                <th class="text-right">Estado</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @forelse ($filteredContextos as $idx => $ctx)
+                                                @php
+                                                    $fingerprint = "{$ctx['car_id']}|{$ctx['sed_id']}|{$ctx['ple_id']}|{$ctx['mi2_id']}|{$ctx['tur_id']}|{$ctx['sec_id']}";
+                                                    $yaImportado = in_array($fingerprint, $importedFingerprints);
+                                                @endphp
+                                                <tr wire:key="extctx-{{ $idx }}" @class(['opacity-50' => $yaImportado])>
+                                                    <td class="text-sm">
+                                                        <p class="font-medium">{{ $catMaterias[$ctx['mi2_id'] ?? 0] ?? ($ctx['mi2_id'] ? "ID {$ctx['mi2_id']}" : '—') }}</p>
+                                                        @if ($ctx['car_id'])
+                                                            <p class="text-xs text-base-content/55">{{ $catCarreras[$ctx['car_id']] ?? "Carrera {$ctx['car_id']}" }}</p>
+                                                        @endif
+                                                    </td>
+                                                    <td class="whitespace-nowrap text-sm text-base-content/70">
+                                                        {{ $ctx['ple_id'] ? ($catPeriodos[$ctx['ple_id']] ?? "ID {$ctx['ple_id']}") : '—' }}
+                                                    </td>
+                                                    <td class="text-sm text-base-content/70">
+                                                        <p>{{ $ctx['sed_id'] ? ($catSedes[$ctx['sed_id']] ?? "Sede {$ctx['sed_id']}") : '—' }}</p>
+                                                        @if ($ctx['tur_id'] || $ctx['sec_id'])
+                                                            <p class="text-xs">
+                                                                {{ $ctx['tur_id'] ? ($catTurnos[$ctx['tur_id']] ?? "Turno {$ctx['tur_id']}") : '' }}{{ ($ctx['tur_id'] && $ctx['sec_id']) ? ' · ' : '' }}{{ $ctx['sec_id'] ? ($catSecciones[$ctx['sec_id']] ?? "Sección {$ctx['sec_id']}") : '' }}
+                                                            </p>
+                                                        @endif
+                                                    </td>
+                                                    <td class="text-right">
+                                                        @if ($yaImportado)
+                                                            <span class="badge badge-success badge-sm">✓ Importado</span>
+                                                        @else
+                                                            <button
+                                                                type="button"
+                                                                wire:click="importarContextoExterno({{ $idx }})"
+                                                                wire:loading.attr="disabled"
+                                                                wire:target="importarContextoExterno({{ $idx }})"
+                                                                class="btn btn-primary btn-xs"
+                                                            >
+                                                                <span wire:loading.remove wire:target="importarContextoExterno({{ $idx }})">Importar</span>
+                                                                <span wire:loading wire:target="importarContextoExterno({{ $idx }})" class="loading loading-spinner loading-xs"></span>
+                                                            </button>
+                                                        @endif
+                                                    </td>
+                                                </tr>
+                                            @empty
+                                                <tr>
+                                                    <td colspan="4" class="py-3 text-center text-sm text-base-content/55">Sin resultados para el período seleccionado.</td>
+                                                </tr>
+                                            @endforelse
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
+                        @elseif (filled($this->selectedDocente->documento))
+                            <x-mary-alert title="No se encontraron asignaciones en el sistema externo para este docente." icon="o-information-circle" class="alert-info" />
+                        @endif
 
-                            <label class="label cursor-pointer justify-start gap-3 rounded-2xl border border-base-300 bg-base-200/40 px-4 py-3">
-                                <input wire:model="contextoForm.activo" type="checkbox" class="checkbox checkbox-primary" />
-                                <span class="label-text font-medium">Contexto activo para coincidencia</span>
-                            </label>
+                        {{-- Manual form toggle --}}
+                        <div class="border-t border-base-300 pt-2">
+                            <button
+                                type="button"
+                                wire:click="toggleManualForm"
+                                class="flex w-full items-center justify-between rounded-xl px-1 py-2 text-sm font-medium text-base-content/65 hover:text-base-content"
+                            >
+                                <span>Agregar contexto manualmente</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" @class(['size-4 transition-transform duration-150', 'rotate-180' => $showManualForm]) fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </button>
+                        </div>
 
-                            @error('contexto')
-                                <p class="text-sm font-medium text-error">{{ $message }}</p>
-                            @enderror
+                        @if ($showManualForm)
+                            <form wire:submit="saveContexto" class="space-y-4">
+                                <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                                    {{-- 1. Sede (root of cascade) --}}
+                                    <label class="form-control w-full">
+                                        <span class="label-text text-sm font-medium">Sede</span>
+                                        <select wire:change="onContextoFieldChanged('sed_id', $event.target.value)" class="select select-bordered w-full">
+                                            <option value="">— Cualquier sede —</option>
+                                            @foreach ($this->formSedes as $id => $nombre)
+                                                <option value="{{ $id }}" @selected((string) ($contextoForm['sed_id'] ?? '') === (string) $id)>{{ $nombre }}</option>
+                                            @endforeach
+                                        </select>
+                                        @error('contextoForm.sed_id')
+                                            <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
+                                        @enderror
+                                    </label>
 
-                            <div class="flex justify-end">
-                                <button type="submit" class="btn btn-primary min-w-48">
-                                    <span wire:loading.remove wire:target="saveContexto">Agregar contexto</span>
-                                    <span wire:loading wire:target="saveContexto" class="loading loading-spinner loading-sm"></span>
-                                </button>
-                            </div>
-                        </form>
+                                    {{-- 2. Carrera → filtered by sede --}}
+                                    <label class="form-control w-full">
+                                        <span class="label-text text-sm font-medium">Carrera</span>
+                                        <select wire:change="onContextoFieldChanged('car_id', $event.target.value)" class="select select-bordered w-full">
+                                            <option value="">— Cualquier carrera —</option>
+                                            @foreach ($this->formCarreras as $id => $nombre)
+                                                <option value="{{ $id }}" @selected((string) ($contextoForm['car_id'] ?? '') === (string) $id)>{{ $nombre }}</option>
+                                            @endforeach
+                                        </select>
+                                        @error('contextoForm.car_id')
+                                            <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
+                                        @enderror
+                                    </label>
+
+                                    {{-- 3. Materia → filtered by sede + carrera --}}
+                                    <label class="form-control w-full">
+                                        <span class="label-text text-sm font-medium">Materia</span>
+                                        @if (! empty($this->formMaterias))
+                                            <select wire:change="onContextoFieldChanged('mi2_id', $event.target.value)" class="select select-bordered w-full">
+                                                <option value="">— Cualquier materia —</option>
+                                                @foreach ($this->formMaterias as $id => $nombre)
+                                                    <option value="{{ $id }}" @selected((string) ($contextoForm['mi2_id'] ?? '') === (string) $id)>{{ $nombre }}</option>
+                                                @endforeach
+                                            </select>
+                                        @else
+                                            <input wire:model="contextoForm.mi2_id" type="number" min="1" class="input input-bordered w-full" placeholder="ID de materia" />
+                                        @endif
+                                        @error('contextoForm.mi2_id')
+                                            <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
+                                        @enderror
+                                    </label>
+
+                                    {{-- 4. Período → filtered by sede + carrera + materia --}}
+                                    <label class="form-control w-full">
+                                        <span class="label-text text-sm font-medium">Período lectivo</span>
+                                        <select wire:change="onContextoFieldChanged('ple_id', $event.target.value)" class="select select-bordered w-full">
+                                            <option value="">— Cualquier período —</option>
+                                            @foreach ($this->formPeriodos as $id => $nombre)
+                                                <option value="{{ $id }}" @selected((string) ($contextoForm['ple_id'] ?? '') === (string) $id)>{{ $nombre }}</option>
+                                            @endforeach
+                                        </select>
+                                        @error('contextoForm.ple_id')
+                                            <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
+                                        @enderror
+                                    </label>
+
+                                    {{-- 5. Turno → filtered by all above --}}
+                                    <label class="form-control w-full">
+                                        <span class="label-text text-sm font-medium">Turno</span>
+                                        <select wire:change="onContextoFieldChanged('tur_id', $event.target.value)" class="select select-bordered w-full">
+                                            <option value="">— Cualquier turno —</option>
+                                            @foreach ($this->formTurnos as $id => $nombre)
+                                                <option value="{{ $id }}" @selected((string) ($contextoForm['tur_id'] ?? '') === (string) $id)>{{ $nombre }}</option>
+                                            @endforeach
+                                        </select>
+                                        @error('contextoForm.tur_id')
+                                            <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
+                                        @enderror
+                                    </label>
+
+                                    {{-- 6. Sección → filtered by all above --}}
+                                    <label class="form-control w-full">
+                                        <span class="label-text text-sm font-medium">Sección</span>
+                                        <select wire:change="onContextoFieldChanged('sec_id', $event.target.value)" class="select select-bordered w-full">
+                                            <option value="">— Cualquier sección —</option>
+                                            @foreach ($this->formSecciones as $id => $nombre)
+                                                <option value="{{ $id }}" @selected((string) ($contextoForm['sec_id'] ?? '') === (string) $id)>{{ $nombre }}</option>
+                                            @endforeach
+                                        </select>
+                                        @error('contextoForm.sec_id')
+                                            <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
+                                        @enderror
+                                    </label>
+                                </div>
+
+                                <label class="label cursor-pointer justify-start gap-3 rounded-2xl border border-base-300 bg-base-200/40 px-4 py-3">
+                                    <input wire:model="contextoForm.activo" type="checkbox" class="checkbox checkbox-primary" />
+                                    <span class="label-text font-medium">Contexto activo para coincidencia</span>
+                                </label>
+
+                                @error('contexto')
+                                    <p class="text-sm font-medium text-error">{{ $message }}</p>
+                                @enderror
+
+                                <div class="flex justify-end">
+                                    <button type="submit" class="btn btn-primary min-w-48">
+                                        <span wire:loading.remove wire:target="saveContexto">Agregar contexto</span>
+                                        <span wire:loading wire:target="saveContexto" class="loading loading-spinner loading-sm"></span>
+                                    </button>
+                                </div>
+                            </form>
+                        @endif
                     @endif
                 </div>
             </article>
@@ -746,7 +1195,24 @@ new #[Layout('layouts.app')] class extends Component
                                     <button type="button" wire:click="selectDocente({{ $docente->id }})" class="btn btn-primary btn-sm">
                                         {{ $selectedDocenteId === $docente->id ? 'Contexto activo' : 'Cargar contexto' }}
                                     </button>
+                                    @if (filled($docente->documento))
+                                        <button
+                                            type="button"
+                                            wire:click="sincronizarContextosDocente({{ $docente->id }})"
+                                            wire:loading.attr="disabled"
+                                            wire:target="sincronizarContextosDocente({{ $docente->id }})"
+                                            class="btn btn-secondary btn-sm"
+                                            title="Importar contextos desde el sistema externo"
+                                        >
+                                            <span wire:loading.remove wire:target="sincronizarContextosDocente({{ $docente->id }})">Sincronizar</span>
+                                            <span wire:loading wire:target="sincronizarContextosDocente({{ $docente->id }})" class="loading loading-spinner loading-xs"></span>
+                                        </button>
+                                    @endif
                                 </div>
+
+                                @error("sync_{$docente->id}")
+                                    <p class="text-sm font-medium text-error">{{ $message }}</p>
+                                @enderror
 
                                 @if ($docente->contextos->isEmpty())
                                     <div class="rounded-2xl border border-dashed border-base-300 bg-base-200/30 px-4 py-3 text-sm text-base-content/65">

@@ -4,11 +4,14 @@ namespace Tests\Feature\Admin;
 
 use App\Models\AcademicUnit;
 use App\Models\Docente;
+use App\Models\DocenteContexto;
 use App\Models\User;
 use App\Models\UserAcademicUnitScope;
+use App\Services\AlumnoExternoService;
 use Database\Seeders\AcademicUnitSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
+use Mockery\MockInterface;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -112,10 +115,10 @@ class AdminEvaluacionDocenteManagementTest extends TestCase
 
         Volt::test('admin.evaluacion-docente.docentes')
             ->call('selectDocente', $docente->id)
-            ->set('contextoForm.car_id', '14')
             ->set('contextoForm.sed_id', '8')
-            ->set('contextoForm.ple_id', '2026')
+            ->set('contextoForm.car_id', '14')
             ->set('contextoForm.mi2_id', '301')
+            ->set('contextoForm.ple_id', '2026')
             ->set('contextoForm.tur_id', '2')
             ->set('contextoForm.sec_id', '4')
             ->call('saveContexto')
@@ -235,5 +238,112 @@ class AdminEvaluacionDocenteManagementTest extends TestCase
             'docente_id' => $docente->id,
             'sed_id' => 3,
         ]);
+    }
+
+    public function test_sync_imports_contextos_from_external_service(): void
+    {
+        $admin = $this->adminUser();
+
+        $docente = Docente::query()->create([
+            'nombre' => 'Dorothy Vaughan',
+            'documento' => '3333333',
+            'activo' => true,
+        ]);
+
+        $this->mock(AlumnoExternoService::class, function (MockInterface $mock) use ($docente): void {
+            $mock->shouldReceive('contextosDocentePorDocumento')
+                ->once()
+                ->with($docente->documento)
+                ->andReturn(collect([
+                    ['car_id' => 14, 'sed_id' => 3, 'ple_id' => 68, 'mi2_id' => 6630, 'tur_id' => 2, 'sec_id' => 8],
+                ]));
+            $mock->shouldReceive('catCarreras')->andReturn([]);
+            $mock->shouldReceive('catSedes')->andReturn([]);
+            $mock->shouldReceive('catPeriodos')->andReturn([]);
+            $mock->shouldReceive('catTurnos')->andReturn([]);
+            $mock->shouldReceive('catSecciones')->andReturn([]);
+            $mock->shouldReceive('catMateriasPorIds')->andReturn([]);
+        });
+
+        $this->actingAs($admin);
+
+        Volt::test('admin.evaluacion-docente.docentes')
+            ->call('sincronizarContextosDocente', $docente->id)
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('docente_contextos', [
+            'docente_id' => $docente->id,
+            'car_id' => 14,
+            'sed_id' => 3,
+            'ple_id' => 68,
+            'mi2_id' => 6630,
+            'tur_id' => 2,
+            'sec_id' => 8,
+            'activo' => true,
+        ]);
+    }
+
+    public function test_sync_is_idempotent_for_existing_contextos(): void
+    {
+        $admin = $this->adminUser();
+
+        $docente = Docente::query()->create([
+            'nombre' => 'Katherine Johnson',
+            'documento' => '4444444',
+            'activo' => true,
+        ]);
+
+        DocenteContexto::query()->create([
+            'docente_id' => $docente->id,
+            'car_id' => 14,
+            'sed_id' => 3,
+            'ple_id' => 68,
+            'mi2_id' => 6630,
+            'tur_id' => 2,
+            'sec_id' => 8,
+            'activo' => true,
+        ]);
+
+        $this->mock(AlumnoExternoService::class, function (MockInterface $mock) use ($docente): void {
+            $mock->shouldReceive('contextosDocentePorDocumento')
+                ->once()
+                ->with($docente->documento)
+                ->andReturn(collect([
+                    ['car_id' => 14, 'sed_id' => 3, 'ple_id' => 68, 'mi2_id' => 6630, 'tur_id' => 2, 'sec_id' => 8],
+                ]));
+            $mock->shouldReceive('catCarreras')->andReturn([]);
+            $mock->shouldReceive('catSedes')->andReturn([]);
+            $mock->shouldReceive('catPeriodos')->andReturn([]);
+            $mock->shouldReceive('catTurnos')->andReturn([]);
+            $mock->shouldReceive('catSecciones')->andReturn([]);
+            $mock->shouldReceive('catMateriasPorIds')->andReturn([]);
+        });
+
+        $this->actingAs($admin);
+
+        Volt::test('admin.evaluacion-docente.docentes')
+            ->call('sincronizarContextosDocente', $docente->id)
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseCount('docente_contextos', 1);
+    }
+
+    public function test_sync_adds_error_when_docente_has_no_documento(): void
+    {
+        $admin = $this->adminUser();
+
+        $docente = Docente::query()->create([
+            'nombre' => 'Sin Documento',
+            'documento' => null,
+            'activo' => true,
+        ]);
+
+        $this->actingAs($admin);
+
+        Volt::test('admin.evaluacion-docente.docentes')
+            ->call('sincronizarContextosDocente', $docente->id)
+            ->assertHasErrors(["sync_{$docente->id}"]);
+
+        $this->assertDatabaseCount('docente_contextos', 0);
     }
 }
