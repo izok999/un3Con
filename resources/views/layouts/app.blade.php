@@ -65,13 +65,6 @@
                     'route' => 'alumno.carreras',
                     'active' => ['alumno.carreras', 'alumno.carreras.*'],
                 ],
-                'extracto' => [
-                    'title' => 'Extracto Académico',
-                    'mobile_title' => 'Extracto',
-                    'icon' => 'o-document-text',
-                    'route' => 'alumno.extracto',
-                    'active' => ['alumno.extracto'],
-                ],
                 'materias' => [
                     'title' => 'Materias Inscriptas',
                     'mobile_title' => 'Materias',
@@ -99,7 +92,7 @@
                 [
                     'title' => 'Académico',
                     'icon' => 'o-academic-cap',
-                    'items' => ['carreras', 'extracto', 'materias', 'evaluacion_docente'],
+                    'items' => ['carreras', 'materias', 'evaluacion_docente'],
                 ],
                 [
                     'title' => 'Finanzas',
@@ -108,7 +101,7 @@
                 ],
             ];
 
-            $alumnoMobileNavigation = ['home', 'carreras', 'extracto', 'materias', 'evaluacion_docente', 'deudas'];
+            $alumnoMobileNavigation = ['home', 'carreras', 'materias', 'evaluacion_docente', 'deudas'];
         @endphp
 
         <x-main full-width>
@@ -235,7 +228,7 @@
                 aria-label="Navegacion principal del alumno"
                 class="mobile-bottom-nav glass-navbar fixed inset-x-4 z-60 lg:hidden"
             >
-                <div class="grid grid-cols-6 gap-1 p-2">
+                <div class="grid grid-cols-5 gap-1 p-2">
                     @foreach ($alumnoMobileNavigation as $itemKey)
                         @php
                             $item = $navigationLinks[$itemKey];

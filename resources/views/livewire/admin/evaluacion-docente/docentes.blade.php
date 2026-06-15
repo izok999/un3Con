@@ -59,7 +59,10 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $filtroPleCodigo = '';
 
-    public bool $showManualForm = false;
+    /** @var array<int, bool> */
+    public array $selectedExternos = [];
+
+    public ?string $contextoGuardado = null;
 
     /** @var array<int, int> */
     public array $allowedSedeIds = [];
@@ -116,25 +119,14 @@ new #[Layout('layouts.app')] class extends Component
         };
     }
 
-    public function onContextoFieldChanged(string $field, string $value): void
-    {
-        $this->contextoForm[$field] = $value;
-
-        $cascade = match ($field) {
-            'sed_id' => ['car_id', 'mi2_id', 'ple_id', 'tur_id', 'sec_id'],
-            'car_id' => ['mi2_id', 'ple_id', 'tur_id', 'sec_id'],
-            'mi2_id' => ['ple_id', 'tur_id', 'sec_id'],
-            'ple_id' => ['tur_id', 'sec_id'],
-            'tur_id' => ['sec_id'],
-            default => [],
-        };
-
-        $this->resetContextoFormCascade(...$cascade);
-    }
-
     public function createNewDocente(): void
     {
         $this->resetDocenteForm();
+        $this->resetContextoForm();
+        $this->selectedDocenteId = null;
+        $this->contextosExternos = [];
+        $this->selectedExternos = [];
+        $this->contextoGuardado = null;
         $this->resetValidation();
     }
 
@@ -145,17 +137,32 @@ new #[Layout('layouts.app')] class extends Component
         $this->editingDocenteId = $docente->id;
         $this->selectedDocenteId = $docente->id;
         $this->fillDocenteForm($docente);
+        $this->contextoGuardado = null;
         $this->resetValidation();
     }
 
     public function selectDocente(int $docenteId): void
     {
+        if ($this->selectedDocenteId === $docenteId) {
+            $this->selectedDocenteId = null;
+            $this->editingDocenteId = null;
+            $this->contextosExternos = [];
+            $this->selectedExternos = [];
+            $this->contextoGuardado = null;
+            $this->resetDocenteForm();
+
+            return;
+        }
+
         $docente = $this->findAccessibleDocenteOrFail($docenteId);
 
         $this->selectedDocenteId = $docenteId;
+        $this->editingDocenteId = $docente->id;
         $this->contextosExternos = [];
         $this->filtroPleCodigo = '';
-        $this->showManualForm = true;
+        $this->selectedExternos = [];
+        $this->contextoGuardado = null;
+        $this->fillDocenteForm($docente);
         $this->resetContextoForm();
         $this->resetValidation();
 
@@ -198,6 +205,26 @@ new #[Layout('layouts.app')] class extends Component
         session()->flash('status', $message);
     }
 
+    protected function persistContexto(array $payload): bool
+    {
+        try {
+            DocenteContexto::query()->create([
+                'docente_id' => $this->selectedDocenteId,
+                ...$payload,
+            ]);
+
+            return true;
+        } catch (QueryException $exception) {
+            if ($this->isUniqueConstraintViolation($exception)) {
+                $this->addError('contexto', 'Ya existe un contexto idéntico para este docente.');
+
+                return false;
+            }
+
+            throw $exception;
+        }
+    }
+
     public function saveContexto(): void
     {
         if (! $this->schemaReady) {
@@ -211,6 +238,58 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         $validated = $this->validate($this->contextoRules());
+        $payload = $this->buildContextoPayload($validated);
+
+        if ($payload === null) {
+            return;
+        }
+
+        if (! $this->persistContexto($payload)) {
+            return;
+        }
+
+        $this->contextoGuardado = $this->describeContexto($payload);
+        $this->resetContextoForm();
+        $this->loadDocentes();
+        $this->resetValidation();
+    }
+
+    public function saveContextoYContinuar(): void
+    {
+        if (! $this->schemaReady) {
+            return;
+        }
+
+        if (! $this->selectedDocenteId) {
+            $this->addError('contexto', 'Seleccioná primero un docente para asignar el contexto.');
+
+            return;
+        }
+
+        $validated = $this->validate($this->contextoRules());
+        $payload = $this->buildContextoPayload($validated);
+
+        if ($payload === null) {
+            return;
+        }
+
+        if (! $this->persistContexto($payload)) {
+            return;
+        }
+
+        // Keep parent-level fields to continue adding similar contexts
+        $this->resetContextoFormCascade('tur_id', 'sec_id');
+        $this->loadDocentes();
+        $this->resetValidation();
+        $this->contextoGuardado = $this->describeContexto($payload).' — seguí cargando.';
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>|null
+     */
+    protected function buildContextoPayload(array $validated): ?array
+    {
         $payload = [
             'car_id' => $this->normalizeNullableInt($validated['contextoForm']['car_id'] ?? null),
             'sed_id' => $this->normalizeNullableInt($validated['contextoForm']['sed_id'] ?? null),
@@ -224,7 +303,7 @@ new #[Layout('layouts.app')] class extends Component
         if ($this->isScopedAcademicAdmin() && ! $this->canManageSede($payload['sed_id'])) {
             $this->addError('contextoForm.sed_id', 'Solo podés asignar contextos dentro de tus sedes habilitadas.');
 
-            return;
+            return null;
         }
 
         $hasAtLeastOneScope = collect($payload)
@@ -234,29 +313,36 @@ new #[Layout('layouts.app')] class extends Component
         if (! $hasAtLeastOneScope) {
             $this->addError('contexto', 'Debes cargar al menos un identificador de contexto para el docente.');
 
-            return;
+            return null;
         }
 
-        try {
-            DocenteContexto::query()->create([
-                'docente_id' => $this->selectedDocenteId,
-                ...$payload,
-            ]);
-        } catch (QueryException $exception) {
-            if ($this->isUniqueConstraintViolation($exception)) {
-                $this->addError('contexto', 'Ya existe un contexto idéntico para este docente.');
+        return $payload;
+    }
 
-                return;
-            }
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    protected function describeContexto(array $payload): string
+    {
+        $parts = [];
 
-            throw $exception;
+        if ($payload['sed_id']) {
+            $parts[] = $this->catSedes[$payload['sed_id']] ?? "Sede {$payload['sed_id']}";
         }
 
-        $this->resetContextoForm();
-        $this->loadDocentes();
-        $this->resetValidation();
+        if ($payload['car_id']) {
+            $parts[] = $this->catCarreras[$payload['car_id']] ?? "Carrera {$payload['car_id']}";
+        }
 
-        session()->flash('status', 'Contexto agregado correctamente.');
+        if ($payload['mi2_id']) {
+            $parts[] = $this->catMaterias[$payload['mi2_id']] ?? "Materia {$payload['mi2_id']}";
+        }
+
+        if ($payload['ple_id']) {
+            $parts[] = $this->catPeriodos[$payload['ple_id']] ?? "Período {$payload['ple_id']}";
+        }
+
+        return implode(' · ', $parts) ?: 'Contexto genérico';
     }
 
     public function removeContexto(int $contextoId): void
@@ -274,6 +360,7 @@ new #[Layout('layouts.app')] class extends Component
         $contexto->delete();
 
         $this->loadDocentes();
+        $this->contextoGuardado = null;
         session()->flash('status', 'Contexto eliminado correctamente.');
     }
 
@@ -311,7 +398,6 @@ new #[Layout('layouts.app')] class extends Component
                 ->values()
                 ->all();
 
-            // Enrich catMaterias with names for mi2_ids not yet loaded
             $mi2Ids = collect($contextos)->pluck('mi2_id')->filter()->unique()->values()->all();
             $missing = array_diff($mi2Ids, array_keys($this->catMaterias));
 
@@ -320,10 +406,8 @@ new #[Layout('layouts.app')] class extends Component
             }
 
             $this->contextosExternos = $contextos;
-            $this->showManualForm = empty($contextos);
         } catch (\Throwable) {
             $this->contextosExternos = [];
-            $this->showManualForm = true;
         }
     }
 
@@ -716,12 +800,51 @@ new #[Layout('layouts.app')] class extends Component
         );
 
         $this->loadDocentes();
+        $this->contextoGuardado = null;
         session()->flash('status', 'Contexto importado correctamente.');
     }
 
-    public function toggleManualForm(): void
+    public function importarContextosSeleccionados(): void
     {
-        $this->showManualForm = ! $this->showManualForm;
+        if (! $this->schemaReady || ! $this->selectedDocenteId || empty($this->selectedExternos)) {
+            return;
+        }
+
+        $imported = 0;
+
+        foreach ($this->selectedExternos as $index => $checked) {
+            if (! $checked || ! isset($this->contextosExternos[$index])) {
+                continue;
+            }
+
+            $ctx = $this->contextosExternos[$index];
+
+            if ($this->isScopedAcademicAdmin() && ! $this->canManageSede($ctx['sed_id'])) {
+                continue;
+            }
+
+            $contexto = DocenteContexto::firstOrCreate(
+                [
+                    'docente_id' => $this->selectedDocenteId,
+                    'car_id' => $ctx['car_id'],
+                    'sed_id' => $ctx['sed_id'],
+                    'ple_id' => $ctx['ple_id'],
+                    'mi2_id' => $ctx['mi2_id'],
+                    'tur_id' => $ctx['tur_id'],
+                    'sec_id' => $ctx['sec_id'],
+                ],
+                ['activo' => true],
+            );
+
+            if ($contexto->wasRecentlyCreated) {
+                $imported++;
+            }
+        }
+
+        $this->selectedExternos = [];
+        $this->loadDocentes();
+        $this->contextoGuardado = null;
+        session()->flash('status', "{$imported} contexto(s) importado(s).");
     }
 
     public function sincronizarContextosDocente(int $docenteId): void
@@ -948,12 +1071,36 @@ new #[Layout('layouts.app')] class extends Component
                                             fn ($col) => $col->filter(fn ($c) => (string) ($c['ple_id'] ?? '') === $filtroPleCodigo),
                                         )
                                         ->all();
+                                    $pendingCount = 0;
+                                    foreach ($filteredContextos as $idx => $ctx) {
+                                        $fp = "{$ctx['car_id']}|{$ctx['sed_id']}|{$ctx['ple_id']}|{$ctx['mi2_id']}|{$ctx['tur_id']}|{$ctx['sec_id']}";
+                                        if (! in_array($fp, $importedFingerprints)) {
+                                            $pendingCount++;
+                                        }
+                                    }
                                 @endphp
+
+                                @if ($pendingCount > 1)
+                                    <div class="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            wire:click="importarContextosSeleccionados"
+                                            wire:loading.attr="disabled"
+                                            wire:target="importarContextosSeleccionados"
+                                            class="btn btn-primary btn-sm"
+                                        >
+                                            <span wire:loading.remove wire:target="importarContextosSeleccionados">Importar seleccionados</span>
+                                            <span wire:loading wire:target="importarContextosSeleccionados" class="loading loading-spinner loading-xs"></span>
+                                        </button>
+                                        <span class="text-xs text-base-content/50">Usá los checkboxes para seleccionar</span>
+                                    </div>
+                                @endif
 
                                 <div class="overflow-x-auto rounded-2xl border border-base-300 bg-base-100/70">
                                     <table class="table table-sm">
                                         <thead>
                                             <tr>
+                                                <th class="w-8"></th>
                                                 <th>Materia</th>
                                                 <th>Período</th>
                                                 <th>Sede · Turno · Sección</th>
@@ -967,6 +1114,16 @@ new #[Layout('layouts.app')] class extends Component
                                                     $yaImportado = in_array($fingerprint, $importedFingerprints);
                                                 @endphp
                                                 <tr wire:key="extctx-{{ $idx }}" @class(['opacity-50' => $yaImportado])>
+                                                    <td>
+                                                        @if (! $yaImportado)
+                                                            <input
+                                                                type="checkbox"
+                                                                wire:model="selectedExternos.{{ $idx }}"
+                                                                value="1"
+                                                                class="checkbox checkbox-primary checkbox-xs"
+                                                            />
+                                                        @endif
+                                                    </td>
                                                     <td class="text-sm">
                                                         <p class="font-medium">{{ $catMaterias[$ctx['mi2_id'] ?? 0] ?? ($ctx['mi2_id'] ? "ID {$ctx['mi2_id']}" : '—') }}</p>
                                                         @if ($ctx['car_id'])
@@ -1003,7 +1160,7 @@ new #[Layout('layouts.app')] class extends Component
                                                 </tr>
                                             @empty
                                                 <tr>
-                                                    <td colspan="4" class="py-3 text-center text-sm text-base-content/55">Sin resultados para el período seleccionado.</td>
+                                                    <td colspan="5" class="py-3 text-center text-sm text-base-content/55">Sin resultados para el período seleccionado.</td>
                                                 </tr>
                                             @endforelse
                                         </tbody>
@@ -1014,129 +1171,134 @@ new #[Layout('layouts.app')] class extends Component
                             <x-mary-alert title="No se encontraron asignaciones en el sistema externo para este docente." icon="o-information-circle" class="alert-info" />
                         @endif
 
-                        {{-- Manual form toggle --}}
+                        {{-- Manual context form — always visible when a docente is selected --}}
+                        @if ($contextoGuardado)
+                            <div class="rounded-2xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
+                                <span class="font-medium">✓ Agregado:</span> {{ $contextoGuardado }}
+                            </div>
+                        @endif
+
                         <div class="border-t border-base-300 pt-2">
-                            <button
-                                type="button"
-                                wire:click="toggleManualForm"
-                                class="flex w-full items-center justify-between rounded-xl px-1 py-2 text-sm font-medium text-base-content/65 hover:text-base-content"
-                            >
-                                <span>Agregar contexto manualmente</span>
-                                <svg xmlns="http://www.w3.org/2000/svg" @class(['size-4 transition-transform duration-150', 'rotate-180' => $showManualForm]) fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-                                </svg>
-                            </button>
+                            <p class="text-sm font-medium text-base-content/65 px-1 py-1">Agregar contexto manualmente</p>
                         </div>
 
-                        @if ($showManualForm)
-                            <form wire:submit="saveContexto" class="space-y-4">
-                                <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                                    {{-- 1. Sede (root of cascade) --}}
-                                    <label class="form-control w-full">
-                                        <span class="label-text text-sm font-medium">Sede</span>
-                                        <select wire:change="onContextoFieldChanged('sed_id', $event.target.value)" class="select select-bordered w-full">
-                                            <option value="">— Cualquier sede —</option>
-                                            @foreach ($this->formSedes as $id => $nombre)
-                                                <option value="{{ $id }}" @selected((string) ($contextoForm['sed_id'] ?? '') === (string) $id)>{{ $nombre }}</option>
-                                            @endforeach
-                                        </select>
-                                        @error('contextoForm.sed_id')
-                                            <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
-                                        @enderror
-                                    </label>
-
-                                    {{-- 2. Carrera → filtered by sede --}}
-                                    <label class="form-control w-full">
-                                        <span class="label-text text-sm font-medium">Carrera</span>
-                                        <select wire:change="onContextoFieldChanged('car_id', $event.target.value)" class="select select-bordered w-full">
-                                            <option value="">— Cualquier carrera —</option>
-                                            @foreach ($this->formCarreras as $id => $nombre)
-                                                <option value="{{ $id }}" @selected((string) ($contextoForm['car_id'] ?? '') === (string) $id)>{{ $nombre }}</option>
-                                            @endforeach
-                                        </select>
-                                        @error('contextoForm.car_id')
-                                            <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
-                                        @enderror
-                                    </label>
-
-                                    {{-- 3. Materia → filtered by sede + carrera --}}
-                                    <label class="form-control w-full">
-                                        <span class="label-text text-sm font-medium">Materia</span>
-                                        @if (! empty($this->formMaterias))
-                                            <select wire:change="onContextoFieldChanged('mi2_id', $event.target.value)" class="select select-bordered w-full">
-                                                <option value="">— Cualquier materia —</option>
-                                                @foreach ($this->formMaterias as $id => $nombre)
-                                                    <option value="{{ $id }}" @selected((string) ($contextoForm['mi2_id'] ?? '') === (string) $id)>{{ $nombre }}</option>
-                                                @endforeach
-                                            </select>
-                                        @else
-                                            <input wire:model="contextoForm.mi2_id" type="number" min="1" class="input input-bordered w-full" placeholder="ID de materia" />
-                                        @endif
-                                        @error('contextoForm.mi2_id')
-                                            <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
-                                        @enderror
-                                    </label>
-
-                                    {{-- 4. Período → filtered by sede + carrera + materia --}}
-                                    <label class="form-control w-full">
-                                        <span class="label-text text-sm font-medium">Período lectivo</span>
-                                        <select wire:change="onContextoFieldChanged('ple_id', $event.target.value)" class="select select-bordered w-full">
-                                            <option value="">— Cualquier período —</option>
-                                            @foreach ($this->formPeriodos as $id => $nombre)
-                                                <option value="{{ $id }}" @selected((string) ($contextoForm['ple_id'] ?? '') === (string) $id)>{{ $nombre }}</option>
-                                            @endforeach
-                                        </select>
-                                        @error('contextoForm.ple_id')
-                                            <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
-                                        @enderror
-                                    </label>
-
-                                    {{-- 5. Turno → filtered by all above --}}
-                                    <label class="form-control w-full">
-                                        <span class="label-text text-sm font-medium">Turno</span>
-                                        <select wire:change="onContextoFieldChanged('tur_id', $event.target.value)" class="select select-bordered w-full">
-                                            <option value="">— Cualquier turno —</option>
-                                            @foreach ($this->formTurnos as $id => $nombre)
-                                                <option value="{{ $id }}" @selected((string) ($contextoForm['tur_id'] ?? '') === (string) $id)>{{ $nombre }}</option>
-                                            @endforeach
-                                        </select>
-                                        @error('contextoForm.tur_id')
-                                            <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
-                                        @enderror
-                                    </label>
-
-                                    {{-- 6. Sección → filtered by all above --}}
-                                    <label class="form-control w-full">
-                                        <span class="label-text text-sm font-medium">Sección</span>
-                                        <select wire:change="onContextoFieldChanged('sec_id', $event.target.value)" class="select select-bordered w-full">
-                                            <option value="">— Cualquier sección —</option>
-                                            @foreach ($this->formSecciones as $id => $nombre)
-                                                <option value="{{ $id }}" @selected((string) ($contextoForm['sec_id'] ?? '') === (string) $id)>{{ $nombre }}</option>
-                                            @endforeach
-                                        </select>
-                                        @error('contextoForm.sec_id')
-                                            <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
-                                        @enderror
-                                    </label>
-                                </div>
-
-                                <label class="label cursor-pointer justify-start gap-3 rounded-2xl border border-base-300 bg-base-200/40 px-4 py-3">
-                                    <input wire:model="contextoForm.activo" type="checkbox" class="checkbox checkbox-primary" />
-                                    <span class="label-text font-medium">Contexto activo para coincidencia</span>
+                        <form wire:submit="saveContexto" class="space-y-4">
+                            <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                                {{-- 1. Sede (root of cascade) --}}
+                                <label class="form-control w-full">
+                                    <span class="label-text text-sm font-medium">Sede</span>
+                                    <select wire:model.live="contextoForm.sed_id" class="select select-bordered w-full">
+                                        <option value="">— Cualquier sede —</option>
+                                        @foreach ($this->formSedes as $id => $nombre)
+                                            <option value="{{ $id }}">{{ $nombre }}</option>
+                                        @endforeach
+                                    </select>
+                                    @error('contextoForm.sed_id')
+                                        <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
+                                    @enderror
                                 </label>
 
-                                @error('contexto')
-                                    <p class="text-sm font-medium text-error">{{ $message }}</p>
-                                @enderror
+                                {{-- 2. Carrera → filtered by sede --}}
+                                <label class="form-control w-full">
+                                    <span class="label-text text-sm font-medium">Carrera</span>
+                                    <select wire:model.live="contextoForm.car_id" class="select select-bordered w-full">
+                                        <option value="">— Cualquier carrera —</option>
+                                        @foreach ($this->formCarreras as $id => $nombre)
+                                            <option value="{{ $id }}">{{ $nombre }}</option>
+                                        @endforeach
+                                    </select>
+                                    @error('contextoForm.car_id')
+                                        <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
+                                    @enderror
+                                </label>
 
-                                <div class="flex justify-end">
-                                    <button type="submit" class="btn btn-primary min-w-48">
-                                        <span wire:loading.remove wire:target="saveContexto">Agregar contexto</span>
-                                        <span wire:loading wire:target="saveContexto" class="loading loading-spinner loading-sm"></span>
-                                    </button>
-                                </div>
-                            </form>
-                        @endif
+                                {{-- 3. Materia → filtered by sede + carrera --}}
+                                <label class="form-control w-full">
+                                    <span class="label-text text-sm font-medium">Materia</span>
+                                    @if (! empty($this->formMaterias))
+                                        <select wire:model.live="contextoForm.mi2_id" class="select select-bordered w-full">
+                                            <option value="">— Cualquier materia —</option>
+                                            @foreach ($this->formMaterias as $id => $nombre)
+                                                <option value="{{ $id }}">{{ $nombre }}</option>
+                                            @endforeach
+                                        </select>
+                                    @else
+                                        <input wire:model="contextoForm.mi2_id" type="number" min="1" class="input input-bordered w-full" placeholder="ID de materia" />
+                                    @endif
+                                    @error('contextoForm.mi2_id')
+                                        <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
+                                    @enderror
+                                </label>
+
+                                {{-- 4. Período → filtered by sede + carrera + materia --}}
+                                <label class="form-control w-full">
+                                    <span class="label-text text-sm font-medium">Período lectivo</span>
+                                    <select wire:model.live="contextoForm.ple_id" class="select select-bordered w-full">
+                                        <option value="">— Cualquier período —</option>
+                                        @foreach ($this->formPeriodos as $id => $nombre)
+                                            <option value="{{ $id }}">{{ $nombre }}</option>
+                                        @endforeach
+                                    </select>
+                                    @error('contextoForm.ple_id')
+                                        <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
+                                    @enderror
+                                </label>
+
+                                {{-- 5. Turno → filtered by all above --}}
+                                <label class="form-control w-full">
+                                    <span class="label-text text-sm font-medium">Turno</span>
+                                    <select wire:model.live="contextoForm.tur_id" class="select select-bordered w-full">
+                                        <option value="">— Cualquier turno —</option>
+                                        @foreach ($this->formTurnos as $id => $nombre)
+                                            <option value="{{ $id }}">{{ $nombre }}</option>
+                                        @endforeach
+                                    </select>
+                                    @error('contextoForm.tur_id')
+                                        <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
+                                    @enderror
+                                </label>
+
+                                {{-- 6. Sección → filtered by all above --}}
+                                <label class="form-control w-full">
+                                    <span class="label-text text-sm font-medium">Sección</span>
+                                    <select wire:model.live="contextoForm.sec_id" class="select select-bordered w-full">
+                                        <option value="">— Cualquier sección —</option>
+                                        @foreach ($this->formSecciones as $id => $nombre)
+                                            <option value="{{ $id }}">{{ $nombre }}</option>
+                                        @endforeach
+                                    </select>
+                                    @error('contextoForm.sec_id')
+                                        <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
+                                    @enderror
+                                </label>
+                            </div>
+
+                            <label class="label cursor-pointer justify-start gap-3 rounded-2xl border border-base-300 bg-base-200/40 px-4 py-3">
+                                <input wire:model="contextoForm.activo" type="checkbox" class="checkbox checkbox-primary" />
+                                <span class="label-text font-medium">Contexto activo para coincidencia</span>
+                            </label>
+
+                            @error('contexto')
+                                <p class="text-sm font-medium text-error">{{ $message }}</p>
+                            @enderror
+
+                            <div class="flex justify-end gap-2">
+                                <button
+                                    type="button"
+                                    wire:click="saveContextoYContinuar"
+                                    wire:loading.attr="disabled"
+                                    wire:target="saveContexto, saveContextoYContinuar"
+                                    class="btn btn-ghost"
+                                >
+                                    <span wire:loading.remove wire:target="saveContexto, saveContextoYContinuar">Guardar y agregar otro</span>
+                                    <span wire:loading wire:target="saveContexto, saveContextoYContinuar" class="loading loading-spinner loading-sm"></span>
+                                </button>
+                                <button type="submit" class="btn btn-primary min-w-48">
+                                    <span wire:loading.remove wire:target="saveContexto, saveContextoYContinuar">Agregar contexto</span>
+                                    <span wire:loading wire:target="saveContexto, saveContextoYContinuar" class="loading loading-spinner loading-sm"></span>
+                                </button>
+                            </div>
+                        </form>
                     @endif
                 </div>
             </article>
@@ -1158,127 +1320,169 @@ new #[Layout('layouts.app')] class extends Component
             @if ($docentes->isEmpty())
                 <x-mary-alert title="Todavía no hay docentes cargados en la proyección local." icon="o-information-circle" class="alert-info" />
             @else
-                <div class="grid grid-cols-1 gap-4 2xl:grid-cols-2">
-                    @foreach ($docentes as $docente)
-                        <article
-                            wire:key="docente-{{ $docente->id }}"
-                            @class([
-                                'glass-card card border transition',
-                                'border-primary/40' => $selectedDocenteId === $docente->id,
-                                'border-base-300' => $selectedDocenteId !== $docente->id,
-                            ])
-                        >
-                            <div class="card-body gap-4">
-                                <div class="flex flex-wrap items-start justify-between gap-3">
-                                    <div class="space-y-1">
-                                        <div class="flex flex-wrap items-center gap-2">
-                                            <h3 class="card-title text-base text-base-content">{{ $docente->nombre }}</h3>
+                <div class="glass-card card overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr class="border-b border-base-300">
+                                    <th></th>
+                                    <th class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Docente</th>
+                                    <th class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Documento</th>
+                                    <th class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Carreras</th>
+                                    <th class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50 text-center">Ctx</th>
+                                    <th class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($docentes as $docente)
+                                    @php
+                                        $isExpanded = $selectedDocenteId === $docente->id;
+                                        $carrerasUnicas = $docente->contextos
+                                            ->pluck('car_id')
+                                            ->filter()
+                                            ->unique()
+                                            ->values();
+                                    @endphp
+                                    <tr
+                                        wire:key="docente-{{ $docente->id }}"
+                                        @class([
+                                            'border-b border-base-300/60 transition',
+                                            'bg-primary/5' => $isExpanded,
+                                            'hover:bg-base-200/40' => ! $isExpanded,
+                                        ])
+                                    >
+                                        <td class="w-8">
+                                            <button
+                                                type="button"
+                                                wire:click="selectDocente({{ $docente->id }})"
+                                                class="btn btn-ghost btn-xs btn-square"
+                                                title="{{ $isExpanded ? 'Colapsar contextos' : 'Editar docente y gestionar contextos' }}"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" @class(['size-4 transition-transform duration-200', 'rotate-90' => $isExpanded]) fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                                                </svg>
+                                            </button>
+                                        </td>
+                                        <td>
+                                            <div class="flex items-center gap-2">
+                                                <span class="font-semibold text-sm text-base-content">{{ $docente->nombre }}</span>
+                                                <span @class([
+                                                    'badge badge-xs',
+                                                    'badge-success' => $docente->activo,
+                                                    'badge-ghost' => ! $docente->activo,
+                                                ])>
+                                                    {{ $docente->activo ? 'Activo' : 'Inactivo' }}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td class="text-sm text-base-content/70">
+                                            {{ $docente->documento ?? '—' }}
+                                        </td>
+                                        <td>
+                                            @if ($carrerasUnicas->isNotEmpty())
+                                                <div class="flex flex-wrap gap-1">
+                                                    @foreach ($carrerasUnicas->take(3) as $carId)
+                                                        <span class="badge badge-soft badge-sm text-xs">{{ $catCarreras[$carId] ?? "ID {$carId}" }}</span>
+                                                    @endforeach
+                                                    @if ($carrerasUnicas->count() > 3)
+                                                        <span class="badge badge-outline badge-sm text-xs">+{{ $carrerasUnicas->count() - 3 }} más</span>
+                                                    @endif
+                                                </div>
+                                            @else
+                                                <span class="text-sm italic text-base-content/40">Sin contextos</span>
+                                            @endif
+                                        </td>
+                                        <td class="text-center">
                                             <span @class([
                                                 'badge badge-sm',
-                                                'badge-success' => $docente->activo,
-                                                'badge-ghost' => ! $docente->activo,
+                                                'badge-primary' => $docente->contextos_count > 0,
+                                                'badge-ghost' => $docente->contextos_count === 0,
                                             ])>
-                                                {{ $docente->activo ? 'Activo' : 'Inactivo' }}
+                                                {{ $docente->contextos_count }}
                                             </span>
-                                        </div>
-                                        <p class="text-sm text-base-content/65">Documento: {{ $docente->documento ?? 'Sin dato' }}</p>
-                                        <p class="text-sm text-base-content/65">ID externo: {{ $docente->docente_externo_id ?? 'Sin dato' }}</p>
-                                    </div>
+                                        </td>
+                                        <td>
+                                            <div class="flex flex-wrap gap-1">
+                                                @if (filled($docente->documento))
+                                                    <button
+                                                        type="button"
+                                                        wire:click="sincronizarContextosDocente({{ $docente->id }})"
+                                                        wire:loading.attr="disabled"
+                                                        wire:target="sincronizarContextosDocente({{ $docente->id }})"
+                                                        class="btn btn-ghost btn-xs text-secondary"
+                                                        title="Importar contextos desde el sistema externo"
+                                                    >
+                                                        <span wire:loading.remove wire:target="sincronizarContextosDocente({{ $docente->id }})">Sincr.</span>
+                                                        <span wire:loading wire:target="sincronizarContextosDocente({{ $docente->id }})" class="loading loading-spinner loading-xs"></span>
+                                                    </button>
+                                                @endif
+                                            </div>
+                                        </td>
+                                    </tr>
 
-                                    <span class="badge badge-outline badge-sm">{{ $docente->contextos_count }} contextos</span>
-                                </div>
+                                    @if ($isExpanded)
+                                        <tr wire:key="docente-{{ $docente->id }}-contextos" class="border-b border-base-300/60 bg-base-200/30">
+                                            <td></td>
+                                            <td colspan="5" class="py-3">
+                                                @error("sync_{$docente->id}")
+                                                    <p class="mb-2 text-sm font-medium text-error">{{ $message }}</p>
+                                                @enderror
 
-                                <div class="flex flex-wrap gap-2">
-                                    <button type="button" wire:click="editDocente({{ $docente->id }})" class="btn btn-outline btn-sm">
-                                        Editar docente
-                                    </button>
-                                    <button type="button" wire:click="selectDocente({{ $docente->id }})" class="btn btn-primary btn-sm">
-                                        {{ $selectedDocenteId === $docente->id ? 'Contexto activo' : 'Cargar contexto' }}
-                                    </button>
-                                    @if (filled($docente->documento))
-                                        <button
-                                            type="button"
-                                            wire:click="sincronizarContextosDocente({{ $docente->id }})"
-                                            wire:loading.attr="disabled"
-                                            wire:target="sincronizarContextosDocente({{ $docente->id }})"
-                                            class="btn btn-secondary btn-sm"
-                                            title="Importar contextos desde el sistema externo"
-                                        >
-                                            <span wire:loading.remove wire:target="sincronizarContextosDocente({{ $docente->id }})">Sincronizar</span>
-                                            <span wire:loading wire:target="sincronizarContextosDocente({{ $docente->id }})" class="loading loading-spinner loading-xs"></span>
-                                        </button>
+                                                @if ($docente->contextos->isEmpty())
+                                                    <div class="rounded-2xl border border-dashed border-base-300 bg-base-200/30 px-4 py-3 text-sm text-base-content/65">
+                                                        Sin contextos cargados todavía.
+                                                    </div>
+                                                @else
+                                                    <div class="overflow-x-auto rounded-2xl border border-base-300 bg-base-100/70">
+                                                        <table class="table table-xs">
+                                                            <thead>
+                                                                <tr>
+                                                                    <th class="text-xs">Carrera</th>
+                                                                    <th class="text-xs">Sede</th>
+                                                                    <th class="text-xs">Período</th>
+                                                                    <th class="text-xs">Materia</th>
+                                                                    <th class="text-xs">Turno</th>
+                                                                    <th class="text-xs">Sección</th>
+                                                                    <th class="text-xs text-center">Estado</th>
+                                                                    <th class="text-xs text-right">Acción</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                @foreach ($docente->contextos as $contexto)
+                                                                    <tr wire:key="contexto-{{ $contexto->id }}">
+                                                                        <td class="text-xs text-base-content/80">{{ $contexto->car_id ? ($catCarreras[$contexto->car_id] ?? "ID {$contexto->car_id}") : '—' }}</td>
+                                                                        <td class="text-xs text-base-content/80">{{ $contexto->sed_id ? ($catSedes[$contexto->sed_id] ?? "ID {$contexto->sed_id}") : '—' }}</td>
+                                                                        <td class="text-xs text-base-content/80 whitespace-nowrap">{{ $contexto->ple_id ? ($catPeriodos[$contexto->ple_id] ?? "ID {$contexto->ple_id}") : '—' }}</td>
+                                                                        <td class="text-xs text-base-content/80">{{ $contexto->mi2_id ? ($catMaterias[$contexto->mi2_id] ?? "ID {$contexto->mi2_id}") : '—' }}</td>
+                                                                        <td class="text-xs text-base-content/80">{{ $contexto->tur_id ? ($catTurnos[$contexto->tur_id] ?? "ID {$contexto->tur_id}") : '—' }}</td>
+                                                                        <td class="text-xs text-base-content/80">{{ $contexto->sec_id ? ($catSecciones[$contexto->sec_id] ?? "ID {$contexto->sec_id}") : '—' }}</td>
+                                                                        <td class="text-center">
+                                                                            <span @class([
+                                                                                'badge badge-xs',
+                                                                                'badge-success' => $contexto->activo,
+                                                                                'badge-ghost' => ! $contexto->activo,
+                                                                            ])>
+                                                                                {{ $contexto->activo ? 'Activo' : 'Inactivo' }}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td class="text-right">
+                                                                            <button type="button" wire:click="removeContexto({{ $contexto->id }})" class="btn btn-ghost btn-xs text-error">
+                                                                                Eliminar
+                                                                            </button>
+                                                                        </td>
+                                                                    </tr>
+                                                                @endforeach
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                @endif
+                                            </td>
+                                        </tr>
                                     @endif
-                                </div>
-
-                                @error("sync_{$docente->id}")
-                                    <p class="text-sm font-medium text-error">{{ $message }}</p>
-                                @enderror
-
-                                @if ($docente->contextos->isEmpty())
-                                    <div class="rounded-2xl border border-dashed border-base-300 bg-base-200/30 px-4 py-3 text-sm text-base-content/65">
-                                        Sin contextos cargados todavía.
-                                    </div>
-                                @else
-                                    <div class="overflow-x-auto rounded-2xl border border-base-300 bg-base-100/70">
-                                        <table class="table table-sm">
-                                            <thead>
-                                                <tr>
-                                                    <th>Contexto</th>
-                                                    <th class="text-center">Estado</th>
-                                                    <th class="text-right">Acción</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                @foreach ($docente->contextos as $contexto)
-                                                    <tr wire:key="contexto-{{ $contexto->id }}">
-                                                        <td class="text-sm text-base-content/80">
-                                                            <div class="space-y-0.5">
-                                                                @if ($contexto->car_id !== null)
-                                                                    <div><span class="text-base-content/55">Carrera:</span> {{ $catCarreras[$contexto->car_id] ?? "ID {$contexto->car_id}" }}</div>
-                                                                @endif
-                                                                @if ($contexto->sed_id !== null)
-                                                                    <div><span class="text-base-content/55">Sede:</span> {{ $catSedes[$contexto->sed_id] ?? "ID {$contexto->sed_id}" }}</div>
-                                                                @endif
-                                                                @if ($contexto->ple_id !== null)
-                                                                    <div><span class="text-base-content/55">Período:</span> {{ $catPeriodos[$contexto->ple_id] ?? "ID {$contexto->ple_id}" }}</div>
-                                                                @endif
-                                                                @if ($contexto->mi2_id !== null)
-                                                                    <div><span class="text-base-content/55">Materia:</span> {{ $catMaterias[$contexto->mi2_id] ?? "ID {$contexto->mi2_id}" }}</div>
-                                                                @endif
-                                                                @if ($contexto->tur_id !== null)
-                                                                    <div><span class="text-base-content/55">Turno:</span> {{ $catTurnos[$contexto->tur_id] ?? "ID {$contexto->tur_id}" }}</div>
-                                                                @endif
-                                                                @if ($contexto->sec_id !== null)
-                                                                    <div><span class="text-base-content/55">Sección:</span> {{ $catSecciones[$contexto->sec_id] ?? "ID {$contexto->sec_id}" }}</div>
-                                                                @endif
-                                                                @if ($contexto->car_id === null && $contexto->sed_id === null && $contexto->ple_id === null && $contexto->mi2_id === null && $contexto->tur_id === null && $contexto->sec_id === null)
-                                                                    <span class="italic text-base-content/45">Global (sin restricciones)</span>
-                                                                @endif
-                                                            </div>
-                                                        </td>
-                                                        <td class="text-center">
-                                                            <span @class([
-                                                                'badge badge-sm',
-                                                                'badge-success' => $contexto->activo,
-                                                                'badge-ghost' => ! $contexto->activo,
-                                                            ])>
-                                                                {{ $contexto->activo ? 'Activo' : 'Inactivo' }}
-                                                            </span>
-                                                        </td>
-                                                        <td class="text-right">
-                                                            <button type="button" wire:click="removeContexto({{ $contexto->id }})" class="btn btn-ghost btn-xs text-error">
-                                                                Eliminar
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                @endforeach
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                @endif
-                            </div>
-                        </article>
-                    @endforeach
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             @endif
         </section>

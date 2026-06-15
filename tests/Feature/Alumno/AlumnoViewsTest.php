@@ -64,12 +64,10 @@ class AlumnoViewsTest extends TestCase
             ->assertSee('wire:navigate', false)
             ->assertSee('href="'.route('dashboard').'"', false)
             ->assertSee('href="'.route('alumno.carreras').'"', false)
-            ->assertSee('href="'.route('alumno.extracto').'"', false)
             ->assertSee('href="'.route('alumno.materias').'"', false)
             ->assertSee('href="'.route('alumno.deudas').'"', false)
             ->assertSeeText('Inicio')
             ->assertSeeText('Carreras')
-            ->assertSeeText('Extracto')
             ->assertSeeText('Materias')
             ->assertSeeText('Pagos');
     }

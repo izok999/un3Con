@@ -57,7 +57,6 @@ Route::get('/normativas', fn () => view('pages.normativas.index', [
 Route::middleware(['auth', 'legacy.account.complete', 'oauth.documento', 'role:'.RoleName::Alumno->value])->group(function () {
     Volt::route('/mis-carreras', 'alumno.mis-carreras')->name('alumno.carreras');
     Volt::route('/mis-carreras/{halId}', 'alumno.detalle-carrera')->name('alumno.carreras.show');
-    Volt::route('/extracto-academico', 'alumno.extracto-academico')->name('alumno.extracto');
     Volt::route('/mis-materias', 'alumno.mis-materias')->name('alumno.materias');
     Volt::route('/evaluacion-docente', 'alumno.evaluacion-docente.index')->name('alumno.evaluacion-docente');
     Volt::route('/evaluacion-docente/{docente}', 'alumno.evaluacion-docente.form')->name('alumno.evaluacion-docente.form');
