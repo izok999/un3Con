@@ -113,8 +113,11 @@ class AdminEvaluacionDocenteManagementTest extends TestCase
 
         $this->actingAs($admin);
 
-        Volt::test('admin.evaluacion-docente.docentes')
-            ->call('selectDocente', $docente->id)
+        // Context management happens in the child component
+        $testable = Volt::test('admin.evaluacion-docente.docente-contextos', [
+            'selectedDocenteId' => $docente->id,
+            'allowedSedeIds' => [],
+        ])
             ->set('contextoForm.sed_id', '8')
             ->set('contextoForm.car_id', '14')
             ->set('contextoForm.mi2_id', '301')
@@ -163,8 +166,10 @@ class AdminEvaluacionDocenteManagementTest extends TestCase
 
         $this->actingAs($unitAdmin);
 
-        Volt::test('admin.evaluacion-docente.docentes')
-            ->call('selectDocente', $docente->id)
+        Volt::test('admin.evaluacion-docente.docente-contextos', [
+            'selectedDocenteId' => $docente->id,
+            'allowedSedeIds' => [8],
+        ])
             ->set('contextoForm.sed_id', '8')
             ->set('contextoForm.ple_id', '2026')
             ->call('saveContexto')
@@ -175,8 +180,10 @@ class AdminEvaluacionDocenteManagementTest extends TestCase
             'sed_id' => 8,
         ]);
 
-        Volt::test('admin.evaluacion-docente.docentes')
-            ->call('selectDocente', $docente->id)
+        Volt::test('admin.evaluacion-docente.docente-contextos', [
+            'selectedDocenteId' => $docente->id,
+            'allowedSedeIds' => [8],
+        ])
             ->set('contextoForm.sed_id', '9')
             ->set('contextoForm.ple_id', '2026')
             ->call('saveContexto')
@@ -203,22 +210,29 @@ class AdminEvaluacionDocenteManagementTest extends TestCase
 
         $this->actingAs($unitAdmin);
 
-        Volt::test('admin.evaluacion-docente.docentes')
-            ->call('selectDocente', $docente->id)
+        // Sede 1 is allowed (from academic unit scope)
+        Volt::test('admin.evaluacion-docente.docente-contextos', [
+            'selectedDocenteId' => $docente->id,
+            'allowedSedeIds' => $unitAdmin->managedSedeIds(),
+        ])
             ->set('contextoForm.sed_id', '1')
             ->set('contextoForm.ple_id', '2026')
             ->call('saveContexto')
             ->assertHasNoErrors();
 
-        Volt::test('admin.evaluacion-docente.docentes')
-            ->call('selectDocente', $docente->id)
+        Volt::test('admin.evaluacion-docente.docente-contextos', [
+            'selectedDocenteId' => $docente->id,
+            'allowedSedeIds' => $unitAdmin->managedSedeIds(),
+        ])
             ->set('contextoForm.sed_id', '8')
             ->set('contextoForm.ple_id', '2026')
             ->call('saveContexto')
             ->assertHasNoErrors();
 
-        Volt::test('admin.evaluacion-docente.docentes')
-            ->call('selectDocente', $docente->id)
+        Volt::test('admin.evaluacion-docente.docente-contextos', [
+            'selectedDocenteId' => $docente->id,
+            'allowedSedeIds' => $unitAdmin->managedSedeIds(),
+        ])
             ->set('contextoForm.sed_id', '3')
             ->set('contextoForm.ple_id', '2026')
             ->call('saveContexto')
@@ -267,8 +281,10 @@ class AdminEvaluacionDocenteManagementTest extends TestCase
 
         $this->actingAs($admin);
 
-        Volt::test('admin.evaluacion-docente.docentes')
-            ->call('sincronizarContextosDocente', $docente->id)
+        Volt::test('admin.evaluacion-docente.docente-contextos', [
+            'selectedDocenteId' => $docente->id,
+        ])
+            ->call('sincronizarContextosDocente')
             ->assertHasNoErrors();
 
         $this->assertDatabaseHas('docente_contextos', [
@@ -321,8 +337,10 @@ class AdminEvaluacionDocenteManagementTest extends TestCase
 
         $this->actingAs($admin);
 
-        Volt::test('admin.evaluacion-docente.docentes')
-            ->call('sincronizarContextosDocente', $docente->id)
+        Volt::test('admin.evaluacion-docente.docente-contextos', [
+            'selectedDocenteId' => $docente->id,
+        ])
+            ->call('sincronizarContextosDocente')
             ->assertHasNoErrors();
 
         $this->assertDatabaseCount('docente_contextos', 1);
@@ -340,9 +358,11 @@ class AdminEvaluacionDocenteManagementTest extends TestCase
 
         $this->actingAs($admin);
 
-        Volt::test('admin.evaluacion-docente.docentes')
-            ->call('sincronizarContextosDocente', $docente->id)
-            ->assertHasErrors(["sync_{$docente->id}"]);
+        Volt::test('admin.evaluacion-docente.docente-contextos', [
+            'selectedDocenteId' => $docente->id,
+        ])
+            ->call('sincronizarContextosDocente')
+            ->assertHasErrors(['sync']);
 
         $this->assertDatabaseCount('docente_contextos', 0);
     }

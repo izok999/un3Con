@@ -4,6 +4,7 @@ use App\Models\Docente;
 use App\Models\EvaluacionDocente;
 use App\Models\FormularioEvaluacion;
 use App\Models\PeriodoEvaluacion;
+use App\Services\AlumnoExternoService;
 use App\Services\EvaluacionDocente\DocentesElegiblesResolver;
 use App\Services\EvaluacionDocente\GuardarEvaluacionDocente;
 use Illuminate\Support\Collection;
@@ -27,6 +28,8 @@ new #[Layout('layouts.app')] class extends Component
     public array $contextoSnapshot = [];
 
     public string $error = '';
+
+    public string $nombreCarrera = '';
 
     public function boot(): void
     {
@@ -67,6 +70,15 @@ new #[Layout('layouts.app')] class extends Component
         abort_if($contexto === null, 403);
 
         $this->contextoSnapshot = $contexto;
+
+        if (isset($contexto['car_id'])) {
+            try {
+                $carreras = app(AlumnoExternoService::class)->catCarreras();
+                $this->nombreCarrera = $carreras[(int) $contexto['car_id']] ?? "Carrera #{$contexto['car_id']}";
+            } catch (\Throwable) {
+                $this->nombreCarrera = "Carrera #{$contexto['car_id']}";
+            }
+        }
 
         if (EvaluacionDocente::query()
             ->where('periodo_evaluacion_id', $this->periodo->id)
@@ -151,7 +163,29 @@ new #[Layout('layouts.app')] class extends Component
                     <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Docente seleccionado</p>
                     <h2 class="card-title text-xl text-primary">{{ $docente->nombre }}</h2>
                     <p class="text-sm text-base-content/70">Periodo activo: {{ $periodo?->nombre }}</p>
+                    @if ($nombreCarrera !== '')
+                        <p class="text-sm text-base-content/70">{{ $nombreCarrera }}</p>
+                    @endif
                 </div>
+
+                @php
+                    $materiasSnapshot = $contextoSnapshot['materias'] ?? [];
+                @endphp
+                @if (! empty($materiasSnapshot))
+                    <div class="rounded-2xl border border-base-300 bg-base-200/40 p-4 space-y-2">
+                        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Materia{{ count($materiasSnapshot) !== 1 ? 's' : '' }} evaluada{{ count($materiasSnapshot) !== 1 ? 's' : '' }}</p>
+                        <div class="flex flex-wrap gap-2">
+                            @foreach ($materiasSnapshot as $m)
+                                <span class="badge badge-soft badge-sm">
+                                    {{ $m['materia'] ?? "ID {$m['mi2_id']}" }}
+                                    @if (! empty($m['turno']))
+                                        · {{ $m['turno'] }}
+                                    @endif
+                                </span>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
 
                 <div class="rounded-2xl border border-base-300 bg-base-200/40 p-4 text-sm text-base-content/80">
                     Utilizá la escala de {{ $formulario?->escala_min }} a {{ $formulario?->escala_max }} para los criterios numéricos. Las observaciones generales no afectan el puntaje total.

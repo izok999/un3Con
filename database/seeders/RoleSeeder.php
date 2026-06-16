@@ -49,6 +49,8 @@ class RoleSeeder extends Seeder
             documento: '1111111',
             roleName: RoleName::Alumno,
         );
+
+        $this->createPolytechnicAdmin();
     }
 
     protected function createDefaultUser(
@@ -71,6 +73,40 @@ class RoleSeeder extends Seeder
         if ($roleName === RoleName::AdminUnidadAcademica) {
             $this->assignDefaultAcademicUnitScope($user);
         }
+    }
+
+    protected function createPolytechnicAdmin(): void
+    {
+        $user = User::firstOrCreate(
+            ['email' => 'admin.politecnica@une.edu.py'],
+            [
+                'name' => 'Admin Politécnica',
+                'documento' => '0000003',
+                'password' => Hash::make('password'),
+            ],
+        );
+
+        $user->syncRoles([RoleName::AdminUnidadAcademica->value]);
+
+        if (! Schema::hasTable('academic_units')) {
+            return;
+        }
+
+        $politecnica = AcademicUnit::query()->firstWhere('slug', 'politecnica');
+
+        if (! $politecnica) {
+            return;
+        }
+
+        UserAcademicUnitScope::query()
+            ->where('user_id', $user->id)
+            ->delete();
+
+        UserAcademicUnitScope::query()->create([
+            'user_id' => $user->id,
+            'academic_unit_id' => $politecnica->id,
+            'sed_id' => (int) $politecnica->legacy_sede_ids[0],
+        ]);
     }
 
     protected function assignDefaultAcademicUnitScope(User $user): void

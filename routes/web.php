@@ -75,6 +75,7 @@ Route::middleware([
     Route::get('/admin', fn () => view('dashboard'))->name('admin.dashboard');
     Volt::route('/admin/consulta-alumno', 'admin.consulta-alumno')->name('admin.consulta-alumno');
     Volt::route('/admin/evaluacion-docente/docentes', 'admin.evaluacion-docente.docentes')->name('admin.evaluacion-docente.docentes');
+    Volt::route('/admin/evaluacion-docente/resultados', 'admin.evaluacion-docente.resultados')->name('admin.evaluacion-docente.resultados');
 });
 
 // Panel de administración global — solo ADMIN general

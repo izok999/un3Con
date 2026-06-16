@@ -2,6 +2,8 @@
 
 use App\Models\EvaluacionDocente;
 use App\Models\PeriodoEvaluacion;
+use App\Models\User;
+use App\Services\AlumnoExternoService;
 use App\Services\EvaluacionDocente\DocentesElegiblesResolver;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -22,6 +24,12 @@ new #[Layout('layouts.app')] class extends Component
     public string $selectedPeriodoId = '';
 
     public array $evaluadosEnPeriodoActivo = [];
+
+    /** @var array<int, array<int, array{mi2_id: int|string, materia: string, tur_id: int|string, turno: string}>> */
+    public array $materiasPorDocente = [];
+
+    /** @var array<int, string> */
+    public array $carrerasPorDocente = [];
 
     public string $error = '';
 
@@ -63,6 +71,7 @@ new #[Layout('layouts.app')] class extends Component
 
         $this->selectedPeriodoId = (string) ($this->periodoActivo?->id ?? $this->periodos->first()?->id ?? '');
         $this->docentes = $this->periodoActivo ? $resolver->paraAlumno($user) : collect();
+        $this->resolverContextosPorDocente($resolver, $user);
         $this->evaluadosEnPeriodoActivo = $this->periodoActivo
             ? EvaluacionDocente::query()
                 ->where('evaluador_user_id', $user->id)
@@ -77,6 +86,82 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         $this->loadEvaluaciones();
+    }
+
+    protected function resolverContextosPorDocente(DocentesElegiblesResolver $resolver, \App\Models\User $user): void
+    {
+        try {
+            $externo = app(AlumnoExternoService::class);
+            $catCarreras = $externo->catCarreras();
+            $catTurnos = $externo->catTurnos();
+        } catch (\Throwable) {
+            $catCarreras = [];
+            $catTurnos = [];
+        }
+
+        // Batch lookup: collect all unique mi2_ids across all docentes
+        $allMi2Ids = $this->docentes
+            ->flatMap(fn ($d) => $d->contextos->filter(fn ($ctx) => $ctx->mi2_id !== null && $ctx->activo)->pluck('mi2_id'))
+            ->unique()
+            ->values()
+            ->toArray();
+
+        try {
+            $nombresMaterias = ! empty($allMi2Ids) ? $externo->catMateriasPorIds($allMi2Ids) : [];
+        } catch (\Throwable) {
+            $nombresMaterias = [];
+        }
+
+        foreach ($this->docentes as $docente) {
+            $contexto = $resolver->contextoParaAlumno($user, $docente);
+
+            if ($contexto === null) {
+                continue;
+            }
+
+            $vistas = [];
+
+            $materias = [];
+            foreach ($docente->contextos as $ctx) {
+                if ($ctx->mi2_id === null || ! $ctx->activo) {
+                    continue;
+                }
+
+                $clave = $ctx->mi2_id.'|'.($ctx->tur_id ?? 'null');
+                if (isset($vistas[$clave])) {
+                    continue;
+                }
+
+                $nombreMateria = $nombresMaterias[(int) $ctx->mi2_id] ?? null;
+                $nombreTurno = $ctx->tur_id !== null ? ($catTurnos[(int) $ctx->tur_id] ?? null) : null;
+
+                $materias[] = [
+                    'mi2_id' => $ctx->mi2_id,
+                    'materia' => $nombreMateria ?? "ID {$ctx->mi2_id}",
+                    'tur_id' => $ctx->tur_id ?? '',
+                    'turno' => $nombreTurno ?? '',
+                ];
+
+                $vistas[$clave] = true;
+            }
+
+            $this->materiasPorDocente[$docente->id] = $materias;
+
+            // Carreras
+            $carIds = $docente->contextos
+                ->filter(fn ($ctx) => $ctx->car_id !== null && $ctx->activo)
+                ->pluck('car_id')
+                ->unique()
+                ->values()
+                ->toArray();
+
+            $carreras = array_map(
+                fn (int $carId): string => $catCarreras[$carId] ?? "Carrera #{$carId}",
+                $carIds,
+            );
+
+            $this->carrerasPorDocente[$docente->id] = $carreras;
+        }
     }
 
     public function updatedSelectedPeriodoId(): void
@@ -166,6 +251,29 @@ new #[Layout('layouts.app')] class extends Component
                                         <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Docente habilitado</p>
                                         <h3 class="card-title text-base text-base-content">{{ $docente->nombre }}</h3>
                                         <p class="text-sm text-base-content/65">Documento: {{ $docente->documento ?? 'Sin dato' }}</p>
+                                        @php
+                                            $materias = $materiasPorDocente[$docente->id] ?? [];
+                                            $carreras = $carrerasPorDocente[$docente->id] ?? [];
+                                        @endphp
+                                        @if (! empty($carreras))
+                                            <div class="flex flex-wrap gap-1 mt-1">
+                                                @foreach ($carreras as $carrera)
+                                                    <span class="badge badge-soft badge-xs text-xs">{{ $carrera }}</span>
+                                                @endforeach
+                                            </div>
+                                        @endif
+                                        @if (! empty($materias))
+                                            <div class="flex flex-wrap gap-1 mt-1">
+                                                @foreach ($materias as $m)
+                                                    <span class="badge badge-outline badge-xs text-xs">
+                                                        {{ $m['materia'] }}
+                                                        @if (! empty($m['turno']))
+                                                            · {{ $m['turno'] }}
+                                                        @endif
+                                                    </span>
+                                                @endforeach
+                                            </div>
+                                        @endif
                                     </div>
 
                                     @if ($yaEvaluado)

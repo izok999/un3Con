@@ -1,5 +1,8 @@
 <?php
 
+use App\Models\Docente;
+use App\Models\EvaluacionDocente;
+use App\Models\PeriodoEvaluacion;
 use App\Services\AlumnoExternoService;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -17,6 +20,8 @@ new #[Lazy] class extends Component
     public array $eventAlerts = [];
     public array $eventSummary = [];
     public bool $showWelcomeToast = false;
+    public bool $showPendingToast = false;
+    public int $pendingCount = 0;
     public string $error = '';
     public string $currentMonthLabel = '';
     public int $totalEvents = 0;
@@ -37,6 +42,27 @@ new #[Lazy] class extends Component
         if ($user !== null && ! session()->has('dashboard-welcome-toast-shown')) {
             $this->showWelcomeToast = true;
             session()->put('dashboard-welcome-toast-shown', true);
+        }
+
+        if ($user !== null && ! session()->has('eval-pending-toast-shown')) {
+            $periodoActivo = PeriodoEvaluacion::query()->where('activo', true)->first();
+
+            if ($periodoActivo) {
+                $totalDocentes = Docente::where('activo', true)->count();
+                $yaEvaluados = EvaluacionDocente::query()
+                    ->where('periodo_evaluacion_id', $periodoActivo->id)
+                    ->where('evaluador_user_id', $user->id)
+                    ->pluck('docente_id')
+                    ->unique()
+                    ->count();
+
+                $this->pendingCount = $totalDocentes - $yaEvaluados;
+
+                if ($this->pendingCount > 0) {
+                    $this->showPendingToast = true;
+                    session()->put('eval-pending-toast-shown', true);
+                }
+            }
         }
 
         if (! filled($user->documento)) {
@@ -508,6 +534,26 @@ new #[Lazy] class extends Component
                     css: 'alert-success',
                     timeout: 5000,
                     progressClass: 'progress-success'
+                }
+            }))"
+            class="hidden"
+        ></div>
+    @endif
+
+    @if($showPendingToast)
+        @php
+            $evalLink = route('alumno.evaluacion-docente');
+        @endphp
+        <div
+            data-testid="dashboard-eval-pending-toast"
+            x-data="{}"
+            x-init="$nextTick(() => window.toast({
+                toast: {
+                    title: @js('Tienes evaluaciones pendientes'),
+                    description: {!! Js::from("Tenés {$pendingCount} docente(s) por evaluar en el período activo.<br><a href='{$evalLink}'>Completá tus evaluaciones →</a>") !!},
+                    css: 'alert-warning',
+                    timeout: 8000,
+                    progressClass: 'progress-warning'
                 }
             }))"
             class="hidden"

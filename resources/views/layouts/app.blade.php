@@ -142,10 +142,15 @@
                         <x-menu-sub title="Administración" icon="o-cog-6-tooth">
                             <x-menu-item title="Dashboard Admin" icon="o-chart-bar" link="{{ route('admin.dashboard') }}" />
                             <x-menu-item title="Consulta Alumnos" icon="o-magnifying-glass" link="{{ route('admin.consulta-alumno') }}" />
-                            <x-menu-item title="Docentes Evaluación" icon="o-clipboard-document-list" link="{{ route('admin.evaluacion-docente.docentes') }}" />
                             @if ($isGeneralAdmin)
                                 <x-menu-item title="Admins por Facultad" icon="o-user-group" link="{{ route('admin.academic-unit-admins') }}" />
-                                <x-menu-item title="Config. Eval Docente" icon="o-adjustments-horizontal" link="{{ route('admin.evaluacion-docente.configuracion') }}" />
+                            @endif
+                        </x-menu-sub>
+                        <x-menu-sub title="Evaluación Docente" icon="o-clipboard-document-check">
+                            <x-menu-item title="Docentes" icon="o-clipboard-document-list" link="{{ route('admin.evaluacion-docente.docentes') }}" />
+                            <x-menu-item title="Resultados" icon="o-chart-bar" link="{{ route('admin.evaluacion-docente.resultados') }}" />
+                            @if ($isGeneralAdmin)
+                                <x-menu-item title="Configuración" icon="o-adjustments-horizontal" link="{{ route('admin.evaluacion-docente.configuracion') }}" />
                             @endif
                         </x-menu-sub>
                     @endif
