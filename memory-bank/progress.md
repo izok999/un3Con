@@ -30,10 +30,10 @@ The application is functional with the core student portal, admin panel, and tea
 | Admin config (periods) | ✅ | Create/edit, activate (deactivates others) |
 | Admin config (forms) | ✅ | By evaluator type, activate one per type |
 | Admin config (criteria) | ✅ | Weight, order, type, required flag |
-| Teacher management | ✅ | CRUD, context management (split into parent + child Volt components) |
+| Teacher management | ✅ | CRUD, context management (parent + child components, fully clickable row) |
 | Context sync (UI) | ✅ | Per-teacher "Importar todos" in context panel (lazy external data) |
 | Context sync (CLI) | ✅ | `evaluacion:sincronizar-contextos [--periodo=YYYY]` |
-| Student index view | ✅ | Eligible teachers list with materia/carrera badges, history, "Ya evaluado" tags |
+| Student index view | ✅ | Lazy loading via `wire:init` + `<x-loading class="loading-dots" />`, materia/carrera badges, history, "Ya evaluado" tags |
 | Student form view | ✅ | Scale + text criteria, validation, materia/carrera display from contexto_snapshot |
 | Evaluation submission | ✅ | GuardarEvaluacionDocente service |
 | Weighted score calc | ✅ | PuntajeCalculator: Σ(valor × peso) / Σ(peso) |

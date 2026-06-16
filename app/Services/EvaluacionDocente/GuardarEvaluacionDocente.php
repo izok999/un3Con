@@ -96,6 +96,22 @@ class GuardarEvaluacionDocente
                 'periodo' => 'El periodo seleccionado no está habilitado para recibir evaluaciones.',
             ]);
         }
+
+        $now = now()->startOfDay();
+        $inicio = $periodo->fecha_inicio?->startOfDay();
+        $fin = $periodo->fecha_fin?->endOfDay();
+
+        if ($inicio && $now->lt($inicio)) {
+            throw ValidationException::withMessages([
+                'periodo' => 'El periodo de evaluación aún no ha comenzado.',
+            ]);
+        }
+
+        if ($fin && $now->gt($fin)) {
+            throw ValidationException::withMessages([
+                'periodo' => 'El periodo de evaluación ya ha finalizado.',
+            ]);
+        }
     }
 
     protected function ensureFormularioDisponible(FormularioEvaluacion $formulario, string $tipoEvaluador): void

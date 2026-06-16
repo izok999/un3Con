@@ -36,6 +36,8 @@ new #[Layout('layouts.app')] class extends Component
     /** @var array<int, int> */
     public array $allowedSedeIds = [];
 
+    public bool $isGeneralAdmin = false;
+
     public function boot(): void
     {
         $this->docentes = collect();
@@ -45,6 +47,10 @@ new #[Layout('layouts.app')] class extends Component
     {
         $this->resetDocenteForm();
         $this->allowedSedeIds = $this->resolveAllowedSedeIds();
+
+        /** @var ?User $user */
+        $user = Auth::user();
+        $this->isGeneralAdmin = $user?->isGeneralAdmin() ?? false;
 
         $this->schemaReady = $this->schemaIsReady();
 
@@ -56,6 +62,30 @@ new #[Layout('layouts.app')] class extends Component
 
         $this->loadCatalogs();
         $this->loadDocentes();
+    }
+
+    public function deleteDocente(int $docenteId): void
+    {
+        if (! $this->isGeneralAdmin) {
+            abort(403);
+        }
+
+        $docente = Docente::query()->findOrFail($docenteId);
+        $evaluacionesCount = $docente->evaluaciones()->count();
+
+        $docente->delete();
+
+        if ($this->editingDocenteId === $docenteId) {
+            $this->resetDocenteForm();
+        }
+
+        $this->loadDocentes();
+
+        $message = $evaluacionesCount > 0
+            ? "Docente eliminado. Se preservan {$evaluacionesCount} evaluaciones históricas."
+            : 'Docente eliminado correctamente.';
+
+        session()->flash('status', $message);
     }
 
     public function updatedSearch(): void
@@ -297,6 +327,8 @@ new #[Layout('layouts.app')] class extends Component
         expandedDocenteId: null,
         editingDocenteId: {{ Js::from($editingDocenteId) }},
         minDocenteForm: false,
+        deletingDocenteId: null,
+        deletingDocenteNombre: '',
 
         toggleDocente(docenteId) {
             this.expandedDocenteId = (this.expandedDocenteId === docenteId) ? null : docenteId;
@@ -315,6 +347,7 @@ new #[Layout('layouts.app')] class extends Component
             });
         }
     }"
+    x-on:keydown.escape.window="deletingDocenteId = null"
     @docente-saved.window="
         editingDocenteId = $wire.get('editingDocenteId');
     "
@@ -483,24 +516,18 @@ new #[Layout('layouts.app')] class extends Component
                                             'bg-primary/5' => $editingDocenteId === $docente->id,
                                             'hover:bg-base-200/40',
                                         ])
+                                        x-on:click="
+                                            toggleDocente({{ $docente->id }});
+                                            $wire.set('selectedDocenteId', isExpanded({{ $docente->id }}) ? null : {{ $docente->id }});
+                                            $wire.call('editDocente', {{ $docente->id }});
+                                        "
                                     >
                                         <td class="w-8">
-                                            <button
-                                                type="button"
-                                                x-on:click="
-                                                    toggleDocente({{ $docente->id }});
-                                                    $wire.set('selectedDocenteId', isExpanded({{ $docente->id }}) ? null : {{ $docente->id }});
-                                                    $wire.call('editDocente', {{ $docente->id }});
-                                                "
-                                                class="btn btn-ghost btn-xs btn-square"
-                                                title="Editar docente y gestionar contextos"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg"
-                                                    :class="'size-4 transition-transform duration-200 ' + (isExpanded({{ $docente->id }}) ? 'rotate-90' : '')"
-                                                    fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-                                                </svg>
-                                            </button>
+                                            <svg xmlns="http://www.w3.org/2000/svg"
+                                                :class="'size-4 transition-transform duration-200 ' + (isExpanded({{ $docente->id }}) ? 'rotate-90' : '')"
+                                                fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                                            </svg>
                                         </td>
                                         <td>
                                             <div class="flex items-center gap-2">
@@ -541,19 +568,23 @@ new #[Layout('layouts.app')] class extends Component
                                             </span>
                                         </td>
                                         <td>
-                                            <div class="flex flex-wrap gap-1">
-                                                <button
-                                                    type="button"
-                                                    x-on:click="
-                                                        toggleDocente({{ $docente->id }});
-                                                        $wire.set('selectedDocenteId', isExpanded({{ $docente->id }}) ? null : {{ $docente->id }});
-                                                        $wire.call('editDocente', {{ $docente->id }});
-                                                    "
-                                                    class="btn btn-ghost btn-xs"
-                                                    title="Gestionar docente"
-                                                >
+                                            <div class="flex items-center gap-2">
+                                                <span class="text-sm text-base-content/70 underline decoration-dotted underline-offset-2">
                                                     Editar
-                                                </button>
+                                                </span>
+                                                @if ($isGeneralAdmin)
+                                                    <button
+                                                        type="button"
+                                                        class="btn btn-ghost btn-xs text-error"
+                                                        x-on:click.stop="
+                                                            deletingDocenteId = {{ $docente->id }};
+                                                            deletingDocenteNombre = @js($docente->nombre);
+                                                        "
+                                                        title="Eliminar docente"
+                                                    >
+                                                        Eliminar
+                                                    </button>
+                                                @endif
                                             </div>
                                         </td>
                                     </tr>
@@ -565,4 +596,46 @@ new #[Layout('layouts.app')] class extends Component
             @endif
         </section>
     @endif
+
+    {{-- Delete confirmation modal --}}
+    <div
+        x-cloak
+        x-show="deletingDocenteId !== null"
+        x-on:click.self="deletingDocenteId = null"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+    >
+        <div
+            class="card bg-base-100 shadow-2xl rounded-[1.75rem] max-w-md w-full p-6"
+            x-on:click.stop=""
+        >
+            <h3 class="text-lg font-semibold text-base-content">
+                Eliminar docente
+            </h3>
+            <p class="py-4 text-base-content/70">
+                ¿Eliminar a <strong x-text="deletingDocenteNombre"></strong>?
+            </p>
+            <p class="text-sm text-base-content/50 mb-4">
+                Las evaluaciones registradas se preservan como historial.
+            </p>
+            <div class="flex justify-end gap-3">
+                <button
+                    type="button"
+                    class="btn btn-ghost btn-sm"
+                    x-on:click="deletingDocenteId = null"
+                >
+                    Cancelar
+                </button>
+                <button
+                    type="button"
+                    class="btn btn-error btn-sm"
+                    x-on:click="
+                        $wire.deleteDocente(deletingDocenteId);
+                        deletingDocenteId = null;
+                    "
+                >
+                    Eliminar
+                </button>
+            </div>
+        </div>
+    </div>
 </div>

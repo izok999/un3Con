@@ -31,6 +31,18 @@ As of **June 2026**, the project is in active development with the following com
 
 ## Recent Changes
 
+    ### June 16, 2026 — Period Date Validation + Docente Soft Delete + UI Consistency
+- **Period date validation**: `GuardarEvaluacionDocente::ensurePeriodoActivo()` now validates `fecha_inicio <= now <= fecha_fin` in addition to `activo === true`; blocks submissions outside valid date range with clear Spanish messages; test added (`test_no_permita_evaluar_fuera_del_rango_del_periodo`)
+- **Docente soft delete**: migration adds `deleted_at` to `docentes`, model uses `SoftDeletes` trait; `deleteDocente()` method only for ADMIN principal (`$isGeneralAdmin`), preserves evaluaciones históricas, resets form if deleted docente was being edited
+- **Delete confirmation modal**: inline Alpine.js modal with DaisyUI `card bg-base-100 shadow-2xl` (NOT `modal-box` standalone — learned that `modal-box` renders transparent without `.modal` parent); uses `@click.stop` to prevent event propagation to clickable `<tr>` row (NOT `@click.prevent` which only blocks default action but still bubbles)
+- **MaryUI skill updated**: added anti-patterns #6 (modal-box without .modal parent) and #7 (event propagation in clickable rows — use `@click.stop`, not `@click.prevent`)
+
+    ### June 16, 2026 — Student Evaluation Loading + UX Polish
+- **Lazy loading with `wire:init`**: student evaluation index now renders instantly with `<x-loading class="loading-dots" />` while heavy data (eligible teachers, context resolution) loads in background via `cargarDocentes()` method; set `$ready = true` when done
+- **Docente row fully clickable**: `x-on:click` moved from buttons to `<tr>` in teacher management table — clicking anywhere on the row expands/collapses context panel; removed redundant click handlers from arrow and "Editar" buttons
+- **Configuración cards aligned**: period and form sections unified to `xl:grid-cols-2` (50/50) for symmetric alignment between "Nuevo periodo" and "Nuevo formulario" cards
+- **MaryUI development skill created**: `.agents/skills/maryui-development/SKILL.md` with project-specific mixed prefix rules, component API reference, Livewire binding rules, Alpine.js escaping patterns, and anti-patterns learned from real bugs
+
     ### June 16, 2026 — Admin Academic Unit Assignments UX + Traceability
 - **AcademicUnitSeeder executed**: 6 faculties populated (Agronomía, Económicas, Filosofía, Politécnica, Derecho, Salud)
 - **Test user added**: `admin.politecnica@une.edu.py` (Admin Politécnica, doc 0000003) assigned to Facultad Politécnica (sede 5) via `createPolytechnicAdmin()` in RoleSeeder

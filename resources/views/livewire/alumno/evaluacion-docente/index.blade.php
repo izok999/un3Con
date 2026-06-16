@@ -33,6 +33,8 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $error = '';
 
+    public bool $ready = false;
+
     public function boot(): void
     {
         $this->periodos = collect();
@@ -48,12 +50,8 @@ new #[Layout('layouts.app')] class extends Component
             && Schema::hasTable('evaluaciones_docentes');
     }
 
-    public function mount(DocentesElegiblesResolver $resolver): void
+    public function mount(): void
     {
-        $user = Auth::user();
-
-        abort_unless($user, 403);
-
         if (! $this->schemaIsReady()) {
             $this->error = 'El módulo de evaluación docente todavía no está disponible en este entorno.';
 
@@ -70,8 +68,22 @@ new #[Layout('layouts.app')] class extends Component
             ->first();
 
         $this->selectedPeriodoId = (string) ($this->periodoActivo?->id ?? $this->periodos->first()?->id ?? '');
+
+        if (! $this->periodoActivo) {
+            $this->error = 'No hay un periodo de evaluación activo en este momento.';
+        }
+    }
+
+    public function cargarDocentes(DocentesElegiblesResolver $resolver): void
+    {
+        $user = Auth::user();
+
+        abort_unless($user, 403);
+
         $this->docentes = $this->periodoActivo ? $resolver->paraAlumno($user) : collect();
+
         $this->resolverContextosPorDocente($resolver, $user);
+
         $this->evaluadosEnPeriodoActivo = $this->periodoActivo
             ? EvaluacionDocente::query()
                 ->where('evaluador_user_id', $user->id)
@@ -81,14 +93,11 @@ new #[Layout('layouts.app')] class extends Component
                 ->all()
             : [];
 
-        if (! $this->periodoActivo) {
-            $this->error = 'No hay un periodo de evaluación activo en este momento.';
-        }
-
         $this->loadEvaluaciones();
+        $this->ready = true;
     }
 
-    protected function resolverContextosPorDocente(DocentesElegiblesResolver $resolver, \App\Models\User $user): void
+    protected function resolverContextosPorDocente(DocentesElegiblesResolver $resolver, User $user): void
     {
         try {
             $externo = app(AlumnoExternoService::class);
@@ -187,7 +196,14 @@ new #[Layout('layouts.app')] class extends Component
     }
 }; ?>
 
-<div class="space-y-6">
+<div
+    class="space-y-6"
+    @if (! $error)
+    wire:init="cargarDocentes"
+    @endif
+>
+    <x-slot name="header">Evaluación Docente</x-slot>
+
     <x-mary-header title="Evaluación Docente" subtitle="Docentes habilitados y evaluaciones registradas" icon="o-clipboard-document-check" separator />
 
     @if (session('status'))
@@ -235,7 +251,11 @@ new #[Layout('layouts.app')] class extends Component
                 <h2 class="text-lg font-semibold text-base-content">Seleccioná un docente para completar tu evaluación</h2>
             </div>
 
-            @if ($docentes->isEmpty())
+            @if (! $ready)
+                <div class="flex items-center justify-center py-16">
+                    <x-loading class="loading-dots" />
+                </div>
+            @elseif ($docentes->isEmpty())
                 <x-mary-alert title="Todavía no hay docentes locales asociados a tu contexto académico para este periodo." icon="o-information-circle" class="alert-info" />
             @else
                 <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">

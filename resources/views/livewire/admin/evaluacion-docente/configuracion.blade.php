@@ -494,7 +494,7 @@ new #[Layout('layouts.app')] class extends Component
             </article>
         </section>
 
-        <section class="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <section class="grid gap-6 xl:grid-cols-2">
             <article class="glass-card card">
                 <div class="card-body gap-4">
                     <div class="flex flex-wrap items-start justify-between gap-3">
@@ -590,7 +590,7 @@ new #[Layout('layouts.app')] class extends Component
             </article>
         </section>
 
-        <section class="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <section class="grid gap-6 xl:grid-cols-2">
             <article class="glass-card card">
                 <div class="card-body gap-4">
                     <div class="flex flex-wrap items-start justify-between gap-3">

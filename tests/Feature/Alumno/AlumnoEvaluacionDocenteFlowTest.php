@@ -15,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
+use Livewire\Volt\Volt;
 use Mockery;
 use Spatie\Permission\Models\Role;
 use stdClass;
@@ -256,10 +257,11 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
 
         $this->mockAlumnoContext($user);
 
-        $this->actingAs($user)
-            ->get(route('alumno.evaluacion-docente'))
-            ->assertOk()
+        $this->actingAs($user);
+
+        Volt::test('alumno.evaluacion-docente.index')
             ->assertSeeText('Evaluación Docente')
+            ->call('cargarDocentes')
             ->assertSeeText('Grace Hopper')
             ->assertDontSeeText('Barbara Liskov')
             ->assertSee(route('alumno.evaluacion-docente.form', $docenteElegible), false);
@@ -311,6 +313,56 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
             ->assertSeeText('Katherine Johnson')
             ->assertSeeText('Explica los contenidos con claridad.')
             ->assertSeeText('Enviar evaluación');
+    }
+
+    public function test_no_permita_evaluar_fuera_del_rango_de_fechas_del_periodo(): void
+    {
+        $this->seed(FormularioEvaluacionSeeder::class);
+
+        $periodo = PeriodoEvaluacion::query()->create([
+            'nombre' => 'Periodo Pasado',
+            'fecha_inicio' => '2020-01-01',
+            'fecha_fin' => '2020-12-31',
+            'activo' => true,
+        ]);
+
+        $formulario = FormularioEvaluacion::query()
+            ->where('tipo_evaluador', FormularioEvaluacion::TIPO_ALUMNO)
+            ->firstOrFail();
+
+        $docente = Docente::query()->create([
+            'docente_externo_id' => 9901,
+            'documento' => '5555555',
+            'nombre' => 'Docente Fuera de Plazo',
+            'activo' => true,
+        ]);
+
+        /** @var User $evaluador */
+        $evaluador = User::factory()->create(['documento' => '9999999']);
+        $criterios = $formulario->criterios()->get()->keyBy('orden');
+
+        try {
+            app(GuardarEvaluacionDocente::class)->guardar(
+                $periodo,
+                $formulario,
+                $docente,
+                $evaluador,
+                FormularioEvaluacion::TIPO_ALUMNO,
+                [
+                    ['formulario_criterio_id' => $criterios[1]->id, 'valor_numerico' => 5],
+                    ['formulario_criterio_id' => $criterios[2]->id, 'valor_numerico' => 5],
+                    ['formulario_criterio_id' => $criterios[3]->id, 'valor_numerico' => 5],
+                    ['formulario_criterio_id' => $criterios[4]->id, 'valor_numerico' => 5],
+                    ['formulario_criterio_id' => $criterios[5]->id, 'valor_numerico' => 5],
+                    ['formulario_criterio_id' => $criterios[6]->id, 'valor_numerico' => 5],
+                ],
+            );
+
+            $this->fail('Se esperaba una ValidationException por periodo fuera de rango.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('periodo', $exception->errors());
+            $this->assertStringContainsString('ha finalizado', $exception->errors()['periodo'][0]);
+        }
     }
 
     public function test_muestra_un_aviso_si_el_modulo_de_evaluacion_aun_no_fue_migrado(): void
