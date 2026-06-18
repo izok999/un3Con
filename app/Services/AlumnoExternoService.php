@@ -617,4 +617,276 @@ class AlumnoExternoService
 
         return $row->{$field} ?? null;
     }
+
+    /**
+     * Catálogo de carreras para selects administrativos: [car_id => 'pac_descri']
+     * Usa distinct car_id + pac_descri de la vista de habilitaciones.
+     *
+     * @return array<int, string>
+     */
+    public function catCarreras(): array
+    {
+        return Cache::remember('ext_cat_carreras', 3600, function (): array {
+            return $this->query()
+                ->table('sh_movimientos.vw_alumnos_habilitacion_22')
+                ->select(['car_id', 'pac_descri'])
+                ->distinct()
+                ->orderBy('pac_descri')
+                ->get()
+                ->mapWithKeys(fn ($row) => [(int) $row->car_id => trim($row->pac_descri)])
+                ->all();
+        });
+    }
+
+    /**
+     * Catálogo de sedes para selects administrativos: [sed_id => 'uac_descri — sed_descri']
+     *
+     * @return array<int, string>
+     */
+    public function catSedes(): array
+    {
+        return Cache::remember('ext_cat_sedes', 3600, function (): array {
+            return $this->query()
+                ->table('sh_maestros.vw_unidadesacademicas_sedes_00')
+                ->select(['sed_id', 'uac_descri', 'sed_descri'])
+                ->orderBy('uac_descri')
+                ->orderBy('sed_descri')
+                ->get()
+                ->mapWithKeys(fn ($row) => [
+                    (int) $row->sed_id => trim($row->uac_descri).' — '.trim($row->sed_descri),
+                ])
+                ->all();
+        });
+    }
+
+    /**
+     * Catálogo de periodos lectivos: [ple_id => 'ple_codigo — ple_descri'], más recientes primero.
+     *
+     * @return array<int, string>
+     */
+    public function catPeriodos(): array
+    {
+        return Cache::remember('ext_cat_periodos', 3600, function (): array {
+            return $this->query()
+                ->table('sh_maestros.vw_periodo_lectivo_11')
+                ->select(['ple_id', 'ple_codigo', 'ple_descri'])
+                ->orderByDesc('ple_codigo')
+                ->get()
+                ->mapWithKeys(fn ($row) => [
+                    (int) $row->ple_id => trim($row->ple_codigo).' — '.trim($row->ple_descri),
+                ])
+                ->all();
+        });
+    }
+
+    /**
+     * Catálogo de turnos: [tur_id => 'tur_descri']
+     *
+     * @return array<int, string>
+     */
+    public function catTurnos(): array
+    {
+        return Cache::remember('ext_cat_turnos', 3600, function (): array {
+            return $this->query()
+                ->table('sh_maestros.vw_turnos_00')
+                ->select(['tur_id', 'tur_descri'])
+                ->orderBy('tur_codigo')
+                ->get()
+                ->mapWithKeys(fn ($row) => [(int) $row->tur_id => trim($row->tur_descri)])
+                ->all();
+        });
+    }
+
+    /**
+     * Catálogo de secciones: [sec_id => 'sec_descri']
+     *
+     * @return array<int, string>
+     */
+    public function catSecciones(): array
+    {
+        return Cache::remember('ext_cat_secciones', 3600, function (): array {
+            return $this->query()
+                ->table('sh_maestros.vw_secciones_00')
+                ->select(['sec_id', 'sec_descri'])
+                ->orderBy('sec_codigo')
+                ->get()
+                ->mapWithKeys(fn ($row) => [(int) $row->sec_id => trim($row->sec_descri)])
+                ->all();
+        });
+    }
+
+    /**
+     * Contextos de enseñanza completos de un docente, derivados del cruce entre sus
+     * asignaciones (vw_anexo_items_profesores_questions) y las inscripciones de alumnos
+     * (vw_alumnos_inscriptos_materias_14).
+     *
+     * El JOIN resuelve los campos que la vista de profesores no expone directamente:
+     * car_id, ple_id (entero) y tur_id.
+     *
+     * @return Collection<int, array{car_id: int|null, sed_id: int|null, ple_id: int|null, mi2_id: int|null, tur_id: int|null, sec_id: int|null}>
+     */
+    public function contextosDocentePorDocumento(string $documento, ?string $pleCodigo = null): Collection
+    {
+        return $this->query()
+            ->table('sh_movimientos.vw_anexo_items_profesores_questions as prof')
+            ->selectRaw('prof.mi2_id, prof.ane_idsed as sed_id, prof.sec_id, insc.rsc_idcar as car_id, insc.inm_idple as ple_id, insc.imi_idtur as tur_id')
+            ->join(
+                'sh_movimientos.vw_alumnos_inscriptos_materias_14 as insc',
+                function ($join) {
+                    $join->on('insc.imi_idmi2', '=', 'prof.mi2_id')
+                        ->on('insc.rsc_idsed', '=', 'prof.ane_idsed')
+                        ->whereColumn('insc.ple_codigo', 'prof.ple_codigo');
+                },
+            )
+            ->where('prof.rol_docume', $documento)
+            ->when($pleCodigo !== null, fn ($q) => $q->where('prof.ple_codigo', $pleCodigo))
+            ->distinct()
+            ->get()
+            ->map(fn ($row): array => [
+                'car_id' => isset($row->car_id) ? (int) $row->car_id : null,
+                'sed_id' => isset($row->sed_id) ? (int) $row->sed_id : null,
+                'ple_id' => isset($row->ple_id) ? (int) $row->ple_id : null,
+                'mi2_id' => isset($row->mi2_id) ? (int) $row->mi2_id : null,
+                'tur_id' => isset($row->tur_id) ? (int) $row->tur_id : null,
+                'sec_id' => isset($row->sec_id) ? (int) $row->sec_id : null,
+            ]);
+    }
+
+    /**
+     * Carreras available for a specific sede.
+     *
+     * @return array<int, string>
+     */
+    public function catCarrerasPorSede(int $sedId): array
+    {
+        return Cache::remember("ext_cat_carreras_sed_{$sedId}", 3600, function () use ($sedId): array {
+            return $this->query()
+                ->table('sh_movimientos.vw_alumnos_habilitacion_22')
+                ->select(['car_id', 'pac_descri'])
+                ->where('sed_id', $sedId)
+                ->distinct()
+                ->orderBy('pac_descri')
+                ->get()
+                ->mapWithKeys(fn ($row) => [(int) $row->car_id => trim($row->pac_descri)])
+                ->all();
+        });
+    }
+
+    /**
+     * Materias for a specific carrera + sede combination.
+     *
+     * @return array<int, string>
+     */
+    public function catMateriasPorCarreraYSede(int $carId, int $sedId): array
+    {
+        return Cache::remember("ext_cat_materias_car_{$carId}_sed_{$sedId}", 3600, function () use ($carId, $sedId): array {
+            return $this->query()
+                ->table('sh_movimientos.vw_alumnos_inscriptos_materias_14')
+                ->select(['imi_idmi2', 'mat_descri'])
+                ->where('rsc_idcar', $carId)
+                ->where('rsc_idsed', $sedId)
+                ->distinct()
+                ->orderBy('mat_descri')
+                ->get()
+                ->mapWithKeys(fn ($row) => [(int) $row->imi_idmi2 => trim($row->mat_descri)])
+                ->all();
+        });
+    }
+
+    /**
+     * Periodos for carrera + sede (optionally filtered by materia).
+     *
+     * @return array<int, string>
+     */
+    public function catPeriodosPorCarreraYSede(int $carId, int $sedId, ?int $mi2Id = null): array
+    {
+        $cacheKey = "ext_cat_periodos_car_{$carId}_sed_{$sedId}_mi2_{$mi2Id}";
+
+        return Cache::remember($cacheKey, 3600, function () use ($carId, $sedId, $mi2Id): array {
+            return $this->query()
+                ->table('sh_movimientos.vw_alumnos_inscriptos_materias_14')
+                ->select(['inm_idple', 'ple_descri'])
+                ->where('rsc_idcar', $carId)
+                ->where('rsc_idsed', $sedId)
+                ->when($mi2Id !== null, fn ($q) => $q->where('imi_idmi2', $mi2Id))
+                ->distinct()
+                ->orderByDesc('inm_idple')
+                ->get()
+                ->mapWithKeys(fn ($row) => [(int) $row->inm_idple => trim($row->ple_descri)])
+                ->all();
+        });
+    }
+
+    /**
+     * Turnos for carrera + sede (optionally filtered by materia and periodo).
+     *
+     * @return array<int, string>
+     */
+    public function catTurnosPorCarreraYSede(int $carId, int $sedId, ?int $mi2Id = null, ?int $pleId = null): array
+    {
+        $cacheKey = "ext_cat_turnos_car_{$carId}_sed_{$sedId}_mi2_{$mi2Id}_ple_{$pleId}";
+
+        return Cache::remember($cacheKey, 3600, function () use ($carId, $sedId, $mi2Id, $pleId): array {
+            return $this->query()
+                ->table('sh_movimientos.vw_alumnos_inscriptos_materias_14')
+                ->select(['imi_idtur', 'tur_descri'])
+                ->where('rsc_idcar', $carId)
+                ->where('rsc_idsed', $sedId)
+                ->when($mi2Id !== null, fn ($q) => $q->where('imi_idmi2', $mi2Id))
+                ->when($pleId !== null, fn ($q) => $q->where('inm_idple', $pleId))
+                ->distinct()
+                ->orderBy('tur_descri')
+                ->get()
+                ->mapWithKeys(fn ($row) => [(int) $row->imi_idtur => trim($row->tur_descri)])
+                ->all();
+        });
+    }
+
+    /**
+     * Secciones for carrera + sede (optionally filtered by materia, periodo, turno).
+     *
+     * @return array<int, string>
+     */
+    public function catSeccionesPorCarreraYSede(int $carId, int $sedId, ?int $mi2Id = null, ?int $pleId = null, ?int $turId = null): array
+    {
+        $cacheKey = "ext_cat_secciones_car_{$carId}_sed_{$sedId}_mi2_{$mi2Id}_ple_{$pleId}_tur_{$turId}";
+
+        return Cache::remember($cacheKey, 3600, function () use ($carId, $sedId, $mi2Id, $pleId, $turId): array {
+            return $this->query()
+                ->table('sh_movimientos.vw_alumnos_inscriptos_materias_14')
+                ->select(['imi_idsec', 'sec_descri'])
+                ->where('rsc_idcar', $carId)
+                ->where('rsc_idsed', $sedId)
+                ->when($mi2Id !== null, fn ($q) => $q->where('imi_idmi2', $mi2Id))
+                ->when($pleId !== null, fn ($q) => $q->where('inm_idple', $pleId))
+                ->when($turId !== null, fn ($q) => $q->where('imi_idtur', $turId))
+                ->distinct()
+                ->orderBy('sec_descri')
+                ->get()
+                ->mapWithKeys(fn ($row) => [(int) $row->imi_idsec => trim($row->sec_descri)])
+                ->all();
+        });
+    }
+
+    /**
+     * Nombres de materias para un conjunto de mi2_ids: [mi2_id => 'mat_descri']
+     *
+     * @param  array<int>  $mi2Ids
+     * @return array<int, string>
+     */
+    public function catMateriasPorIds(array $mi2Ids): array
+    {
+        if (empty($mi2Ids)) {
+            return [];
+        }
+
+        return $this->query()
+            ->table('sh_maestros.vw_materias_en_mallas_vigentes_01')
+            ->select(['mi2_id', 'mat_descri'])
+            ->whereIn('mi2_id', $mi2Ids)
+            ->get()
+            ->unique('mi2_id')
+            ->mapWithKeys(fn ($row) => [(int) $row->mi2_id => trim($row->mat_descri)])
+            ->all();
+    }
 }

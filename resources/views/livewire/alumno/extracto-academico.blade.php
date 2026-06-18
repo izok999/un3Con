@@ -55,7 +55,7 @@ new #[Layout('layouts.app')] class extends Component
 ?>
 
 <div>
-    <x-mary-header title="Extracto Académico" subtitle="Historial de calificaciones" separator />
+    <x-mary-header title="Extracto Académico" subtitle="Historial de calificaciones" icon="o-document-text" separator />
 
     @if($error !== '')
         <x-mary-alert title="{{ $error }}" icon="o-exclamation-triangle" class="alert-warning" />
@@ -90,7 +90,7 @@ new #[Layout('layouts.app')] class extends Component
                                     <td>{{ $r->mat_descri }}</td>
                                     <td>{{ $r->tev_descri }}</td>
                                     <td>{{ $r->act_periodo }}</td>
-                                    <td>{{ $r->act_fecha ? \Carbon\Carbon::parse($r->act_fecha)->format('d/m/Y') : '—' }}</td>
+                                    <td>{{ $r->act_fecha ? \Carbon\Carbon::createFromFormat('d/m/Y', $r->act_fecha)->format('d/m/Y') : '—' }}</td>
                                     <td class="text-center font-bold">{{ $r->cal_notaci ?? '—' }}</td>
                                     <td class="text-center">
                                         @if($r->cal_situac == 1)

@@ -5,11 +5,18 @@
  *
  * Constantes personalizables:
  */
-const PARTICLE_COLOR = '#6A9149'; // primary uneTheme
+const PARTICLE_COLOR_LIGHT = '#6A9149'; // primary uneTheme
+const PARTICLE_COLOR_DARK  = '#7FB356'; // primary uneThemeDark
 const COUNT_DESKTOP  = 95;
 const COUNT_MOBILE   = 35;
 const DIST           = 130;
 const SPEED          = 0.45;
+
+function getParticleColor() {
+    return document.documentElement.getAttribute('data-theme') === 'uneThemeDark'
+        ? PARTICLE_COLOR_DARK
+        : PARTICLE_COLOR_LIGHT;
+}
 
 /** Map<canvasId, rafId> — evita loops apilados en re-renders de Livewire */
 const _rafIds = new Map();
@@ -25,6 +32,13 @@ export function initParticles(canvasId) {
 
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
+
+    // Config from data attributes — allows ambient (low-density) instances
+    const opacityDot  = parseFloat(canvas.dataset.particlesOpacity     ?? '0.75');
+    const opacityLine = parseFloat(canvas.dataset.particlesLineOpacity  ?? '0.55');
+    const cntDesktop  = parseInt(canvas.dataset.particlesCountDesktop   ?? COUNT_DESKTOP, 10);
+    const cntMobile   = parseInt(canvas.dataset.particlesCountMobile    ?? COUNT_MOBILE,  10);
+    const distThresh  = parseInt(canvas.dataset.particlesDist           ?? DIST,          10);
 
     // Cancelar loop previo sobre el mismo canvas
     if (_rafIds.has(canvasId)) {
@@ -59,7 +73,7 @@ export function initParticles(canvasId) {
     }
 
     function spawnParticles() {
-        const count = window.innerWidth < 768 ? COUNT_MOBILE : COUNT_DESKTOP;
+        const count = window.innerWidth < 768 ? cntMobile : cntDesktop;
         particles = Array.from({ length: count }, () => ({
             x:  Math.random() * W,
             y:  Math.random() * H,
@@ -88,8 +102,8 @@ export function initParticles(canvasId) {
 
             ctx.beginPath();
             ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-            ctx.fillStyle = PARTICLE_COLOR;
-            ctx.globalAlpha = 0.75;
+            ctx.fillStyle = getParticleColor();
+            ctx.globalAlpha = opacityDot;
             ctx.fill();
         }
 
@@ -100,9 +114,9 @@ export function initParticles(canvasId) {
                 const dx = particles[i].x - particles[j].x;
                 const dy = particles[i].y - particles[j].y;
                 const d  = Math.sqrt(dx * dx + dy * dy);
-                if (d < DIST) {
-                    ctx.globalAlpha = (1 - d / DIST) * 0.55;
-                    ctx.strokeStyle = PARTICLE_COLOR;
+                if (d < distThresh) {
+                    ctx.globalAlpha = (1 - d / distThresh) * opacityLine;
+                    ctx.strokeStyle = getParticleColor();
                     ctx.beginPath();
                     ctx.moveTo(particles[i].x, particles[i].y);
                     ctx.lineTo(particles[j].x, particles[j].y);
@@ -114,9 +128,10 @@ export function initParticles(canvasId) {
         // Ratón como partícula: círculo propio + conexiones del mismo estilo p-a-p
         if (mouse.x !== null) {
             // Halo suave
+            const _pc = getParticleColor();
             const grd = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 12);
-            grd.addColorStop(0, PARTICLE_COLOR + 'cc');
-            grd.addColorStop(1, PARTICLE_COLOR + '00');
+            grd.addColorStop(0, _pc + 'cc');
+            grd.addColorStop(1, _pc + '00');
             ctx.beginPath();
             ctx.arc(mouse.x, mouse.y, 12, 0, Math.PI * 2);
             ctx.fillStyle = grd;
@@ -125,7 +140,7 @@ export function initParticles(canvasId) {
             // Núcleo
             ctx.beginPath();
             ctx.arc(mouse.x, mouse.y, 3, 0, Math.PI * 2);
-            ctx.fillStyle = PARTICLE_COLOR;
+            ctx.fillStyle = _pc;
             ctx.globalAlpha = 1;
             ctx.fill();
             // Conexiones hacia partículas cercanas (mismo umbral y opacidad que p-a-p)
@@ -134,9 +149,9 @@ export function initParticles(canvasId) {
                 const dx = p.x - mouse.x;
                 const dy = p.y - mouse.y;
                 const d  = Math.sqrt(dx * dx + dy * dy);
-                if (d < DIST) {
-                    ctx.globalAlpha = (1 - d / DIST) * 0.7;
-                    ctx.strokeStyle = PARTICLE_COLOR;
+                if (d < distThresh) {
+                    ctx.globalAlpha = (1 - d / distThresh) * 0.7;
+                    ctx.strokeStyle = _pc;
                     ctx.beginPath();
                     ctx.moveTo(p.x, p.y);
                     ctx.lineTo(mouse.x, mouse.y);

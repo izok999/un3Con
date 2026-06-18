@@ -39,6 +39,7 @@ class AlumnoViewsTest extends TestCase
         $alumno->per_apelli = 'BRITEZ PAREDES';
 
         $carrera = new stdClass;
+        $carrera->hal_id = 77291;
         $carrera->uac_descri = 'Facultad Politécnica';
         $carrera->pac_descri = 'INGENIERÍA DE SISTEMAS';
         $carrera->ciu_descri = 'CIUDAD DEL ESTE';
@@ -63,12 +64,10 @@ class AlumnoViewsTest extends TestCase
             ->assertSee('wire:navigate', false)
             ->assertSee('href="'.route('dashboard').'"', false)
             ->assertSee('href="'.route('alumno.carreras').'"', false)
-            ->assertSee('href="'.route('alumno.extracto').'"', false)
             ->assertSee('href="'.route('alumno.materias').'"', false)
             ->assertSee('href="'.route('alumno.deudas').'"', false)
             ->assertSeeText('Inicio')
             ->assertSeeText('Carreras')
-            ->assertSeeText('Extracto')
             ->assertSeeText('Materias')
             ->assertSeeText('Pagos');
     }
@@ -90,6 +89,35 @@ class AlumnoViewsTest extends TestCase
 
     public function test_alumno_dashboard_renders_stagger_markup_for_glass_cards(): void
     {
+        Cache::flush();
+
+        /** @var User $user */
+        $user = User::factory()->create([
+            'documento' => '5413971',
+        ]);
+
+        Role::findOrCreate('ALUMNO', 'web');
+        $user->assignRole('ALUMNO');
+
+        $this->actingAs($user);
+
+        $this->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('data-dashboard-stagger', false)
+            ->assertSee('data-dashboard-stagger-item', false)
+            ->assertSee('--dashboard-stagger-index: 0;', false)
+            ->assertSee('--dashboard-stagger-index: 1;', false)
+            ->assertSeeText($user->name)
+            ->assertSee('skeleton h-18 rounded-3xl', false)
+            ->assertDontSee('dashboard-welcome-toast', false)
+            ->assertDontSeeText('Carrera vigente');
+    }
+
+    public function test_alumno_dashboard_component_shows_only_vigente_carrera_and_recent_payments_with_alerts(): void
+    {
+        Cache::flush();
+        Livewire::withoutLazyLoading();
+
         /** @var User $user */
         $user = User::factory()->create([
             'documento' => '5413971',
@@ -103,33 +131,131 @@ class AlumnoViewsTest extends TestCase
         $alumno = new stdClass;
         $alumno->alu_id = 42178;
         $alumno->alu_perdoc = '5413971';
-        $alumno->per_nombre = 'ISAAC RAFAEL';
-        $alumno->per_apelli = 'BRITEZ PAREDES';
 
-        $carrera = new stdClass;
-        $carrera->uac_descri = 'Facultad Politécnica';
-        $carrera->pac_descri = 'INGENIERÍA DE SISTEMAS';
-        $carrera->ciu_descri = 'CIUDAD DEL ESTE';
-        $carrera->ple_codigo = '2026';
-        $carrera->ple_descri = 'PERIODO LECTIVO 2026';
-        $carrera->hal_vigent = true;
+        $historica = new stdClass;
+        $historica->hal_id = 70001;
+        $historica->sed_id = 7;
+        $historica->uac_descri = 'Facultad de Ciencias';
+        $historica->pac_descri = 'ANÁLISIS DE SISTEMAS';
+        $historica->ciu_descri = 'ASUNCIÓN';
+        $historica->ple_codigo = '2024';
+        $historica->ple_descri = 'PERIODO LECTIVO 2024';
+        $historica->hal_vigent = false;
+
+        $vigente = new stdClass;
+        $vigente->hal_id = 77291;
+        $vigente->sed_id = 8;
+        $vigente->uac_descri = 'Facultad Politécnica';
+        $vigente->pac_descri = 'INGENIERÍA DE SISTEMAS';
+        $vigente->ciu_descri = 'CIUDAD DEL ESTE';
+        $vigente->ple_codigo = '2026';
+        $vigente->ple_descri = 'PERIODO LECTIVO 2026';
+        $vigente->hal_vigent = true;
+
+        $payments = collect(range(1, 11))->map(function (int $index): stdClass {
+            $payment = new stdClass;
+            $payment->cob_arancel = 'Pago '.$index;
+            $payment->uac_descri = 'Facultad Politécnica';
+            $payment->cob_fecha = now()->subDays($index)->format('d/m/Y');
+            $payment->cob_numero = (string) (9000 + $index);
+            $payment->cob_perceptor = 'Caja '.$index;
+            $payment->cob_monto = 100000 + ($index * 1000);
+
+            return $payment;
+        });
+
+        $partial = new stdClass;
+        $partial->tev_descri = 'PRIMER PARCIAL';
+        $partial->mat_descri = 'BASE DE DATOS I';
+        $partial->evp_fecha = now()->addDays(2)->format('d/m/Y');
+        $partial->epi_puntaj = 26;
+        $partial->evp_ptotal = 30;
+
+        $final = new stdClass;
+        $final->tev_descri = 'FINAL ORDINARIO';
+        $final->mat_descri = 'REDES II';
+        $final->evp_fecha = now()->addDays(9)->format('d/m/Y');
+        $final->epi_puntaj = 18;
+        $final->evp_ptotal = 20;
+
+        $notice = new stdClass;
+        $notice->avi_titulo = 'Conferencia de ciberseguridad';
+        $notice->avi_descri = 'Participación abierta para alumnos';
+        $notice->avi_fecha = now()->addDays(5)->format('Y-m-d');
 
         $service = Mockery::mock(AlumnoExternoService::class);
-        $service->shouldReceive('resolverAlumno')->andReturn($alumno);
-        $service->shouldReceive('carreras')->andReturn(new Collection([$carrera]));
+        $service->shouldReceive('resolverAlumno')->once()->with('5413971')->andReturn($alumno);
+        $service->shouldReceive('carreras')->once()->with(42178)->andReturn(new Collection([$historica, $vigente]));
+        $service->shouldReceive('pagosAlumno')->once()->with(42178)->andReturn($payments);
+        $service->shouldReceive('evaluaciones')->once()->with(77291)->andReturn(new Collection([$partial, $final]));
+        $service->shouldReceive('avisos')->once()->with(8)->andReturn(new Collection([$notice]));
 
         $this->app->instance(AlumnoExternoService::class, $service);
 
         $this->get(route('dashboard'))
             ->assertOk()
-            ->assertSee('data-dashboard-stagger', false)
-            ->assertSee('data-dashboard-stagger-item', false)
-            ->assertSee('--dashboard-stagger-index: 0;', false)
-            ->assertSee('--dashboard-stagger-index: 1;', false)
-            ->assertSee('--dashboard-stagger-index: 5;', false)
-            ->assertSeeText('Bienvenido, '.$user->name)
-            ->assertSeeText('Mis Carreras')
-            ->assertSeeText('Estado de Cuenta');
+            ->assertSee('Carrera vigente')
+            ->assertSee('INGENIERÍA DE SISTEMAS')
+            ->assertDontSee('ANÁLISIS DE SISTEMAS')
+            ->assertSee('Habilitación #77291')
+            ->assertSee('Últimos 10 pagos')
+            ->assertSee('Pago 1')
+            ->assertSee('Pago 10')
+            ->assertDontSee('Pago 11')
+            ->assertSee('Calendario académico')
+            ->assertSee('Sistema inicial de alertas')
+            ->assertSee('PRIMER PARCIAL')
+            ->assertSee('Conferencia de ciberseguridad');
+    }
+
+    public function test_alumno_dashboard_shows_welcome_toast_only_on_first_access_in_session(): void
+    {
+        Cache::flush();
+        Livewire::withoutLazyLoading();
+
+        /** @var User $user */
+        $user = User::factory()->create([
+            'documento' => '5413971',
+        ]);
+
+        Role::findOrCreate('ALUMNO', 'web');
+        $user->assignRole('ALUMNO');
+
+        $this->actingAs($user);
+
+        $alumno = new stdClass;
+        $alumno->alu_id = 42178;
+        $alumno->alu_perdoc = '5413971';
+
+        $vigente = new stdClass;
+        $vigente->hal_id = 77291;
+        $vigente->sed_id = 8;
+        $vigente->uac_descri = 'Facultad Politécnica';
+        $vigente->pac_descri = 'INGENIERÍA DE SISTEMAS';
+        $vigente->ciu_descri = 'CIUDAD DEL ESTE';
+        $vigente->ple_codigo = '2026';
+        $vigente->ple_descri = 'PERIODO LECTIVO 2026';
+        $vigente->hal_vigent = true;
+
+        $service = Mockery::mock(AlumnoExternoService::class);
+        $service->shouldReceive('resolverAlumno')->twice()->with('5413971')->andReturn($alumno);
+        $service->shouldReceive('carreras')->twice()->with(42178)->andReturn(new Collection([$vigente]));
+        $service->shouldReceive('pagosAlumno')->once()->with(42178)->andReturn(collect());
+        $service->shouldReceive('evaluaciones')->once()->with(77291)->andReturn(collect());
+        $service->shouldReceive('avisos')->once()->with(8)->andReturn(collect());
+
+        $this->app->instance(AlumnoExternoService::class, $service);
+
+        $this->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('data-testid="dashboard-welcome-toast"', false)
+            ->assertSee('data-toast-title="Bienvenido/a de nuevo"', false)
+            ->assertSee('data-toast-description="Ya podés consultar tu carrera vigente, tus últimos pagos y la agenda académica."', false);
+
+        $this->get(route('dashboard'))
+            ->assertOk()
+            ->assertDontSee('data-testid="dashboard-welcome-toast"', false)
+            ->assertDontSee('Bienvenido/a de nuevo');
     }
 
     public function test_alumno_routes_render_with_mocked_external_service(): void
@@ -151,6 +277,7 @@ class AlumnoViewsTest extends TestCase
         $alumno->per_apelli = 'BRITEZ PAREDES';
 
         $carrera = new stdClass;
+        $carrera->hal_id = 77291;
         $carrera->uac_descri = 'Facultad Politécnica';
         $carrera->pac_descri = 'INGENIERÍA DE SISTEMAS';
         $carrera->ciu_descri = 'CIUDAD DEL ESTE';
@@ -170,7 +297,7 @@ class AlumnoViewsTest extends TestCase
         $extracto->mat_descri = 'BASE DE DATOS I';
         $extracto->tev_descri = 'SEGUNDO FINAL';
         $extracto->act_periodo = '2025';
-        $extracto->act_fecha = '2025-12-09';
+        $extracto->act_fecha = '09/12/2025';
         $extracto->cal_notaci = '1';
         $extracto->cal_situac = '2';
 
@@ -187,7 +314,10 @@ class AlumnoViewsTest extends TestCase
         Volt::test('alumno.mis-carreras')
             ->assertSee('Mis Carreras')
             ->assertSee('INGENIERÍA DE SISTEMAS')
-            ->assertSee('Vigente');
+            ->assertSee('Vigente')
+            ->assertSee('Habilitación #77291')
+            ->assertSee('Ver detalle')
+            ->assertSee('href="'.route('alumno.carreras.show', ['halId' => 77291]).'"', false);
 
         Volt::test('alumno.mis-materias')
             ->assertSee('Materias Inscriptas')
@@ -207,7 +337,9 @@ class AlumnoViewsTest extends TestCase
         $this->get(route('alumno.carreras'))
             ->assertOk()
             ->assertSee('Mis Carreras')
-            ->assertSee('INGENIERÍA DE SISTEMAS');
+            ->assertSee('INGENIERÍA DE SISTEMAS')
+            ->assertSee('Habilitación #77291')
+            ->assertSee('Ver detalle');
     }
 
     public function test_alumno_global_financial_view_renders_tabs_and_timeline_with_legacy_payments(): void

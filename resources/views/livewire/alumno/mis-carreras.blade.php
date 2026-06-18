@@ -38,29 +38,16 @@ new #[Layout('layouts.app')] class extends Component
 ?>
 
 <div>
-    <x-mary-header title="Mis Carreras" subtitle="Habilitaciones vigentes" separator />
+    <x-mary-header title="Mis Carreras" subtitle="Habilitaciones vigentes" icon="o-building-library" separator />
 
     @if($error !== '')
         <x-mary-alert title="{{ $error }}" icon="o-exclamation-triangle" class="alert-warning" />
     @elseif($carreras->isEmpty())
-        <x-mary-alert title="No se encontraron carreras activas." icon="o-information-circle" class="alert-info" />
+        <x-mary-alert title="No se encontraron carreras activas o históricas vinculadas a tu documento." icon="o-information-circle" class="alert-info" />
     @else
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
             @foreach($carreras as $carrera)
-                <x-mary-card shadow class="border border-base-300">
-                    <div class="space-y-1">
-                        <p class="font-bold text-primary text-lg">{{ $carrera->uac_descri }}</p>
-                        <p class="text-sm text-base-content/70">{{ $carrera->pac_descri }} &mdash; {{ $carrera->ciu_descri }}</p>
-                        <div class="flex gap-2 mt-2 flex-wrap">
-                            <x-mary-badge value="{{ $carrera->ple_codigo }}: {{ $carrera->ple_descri }}" class="badge-neutral" />
-                            @if($carrera->hal_vigent)
-                                <x-mary-badge value="Vigente" class="badge-success" />
-                            @else
-                                <x-mary-badge value="No vigente" class="badge-warning" />
-                            @endif
-                        </div>
-                    </div>
-                </x-mary-card>
+                @include('partials.alumno.carrera-card', ['carrera' => $carrera])
             @endforeach
         </div>
     @endif

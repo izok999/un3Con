@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\User;
 use App\Services\AlumnoExternoService;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -20,6 +22,18 @@ new #[Layout('layouts.app')] class extends Component
 
     public bool $buscado = false;
     public ?string $error = null;
+
+    /** @var array<int, int> */
+    public array $allowedSedeIds = [];
+
+    /** @var array<int, string> */
+    public array $allowedAcademicUnitNames = [];
+
+    public function mount(): void
+    {
+        $this->allowedSedeIds = $this->resolveAllowedSedeIds();
+        $this->allowedAcademicUnitNames = $this->resolveAllowedAcademicUnitNames();
+    }
 
     public function buscar(): void
     {
@@ -41,14 +55,28 @@ new #[Layout('layouts.app')] class extends Component
                 return;
             }
 
-            $this->alumno = (array) $result;
             $aluId = (int) $result->alu_id;
 
             $toArrayMap = fn ($collection) => $collection->map(fn ($item) => (array) $item)->toArray();
 
-            $this->carreras = $toArrayMap($service->carreras($aluId));
+            $carreras = $toArrayMap($service->carreras($aluId));
+            $materias = $toArrayMap($service->materiasInscriptas($aluId));
+
+            if ($this->isScopedAcademicAdmin() && ! $this->studentBelongsToManagedAcademicUnit($carreras, $materias)) {
+                $this->error = 'Solo podés consultar alumnos vinculados a las facultades que tenés asignadas.';
+
+                return;
+            }
+
+            $this->alumno = (array) $result;
+            $this->carreras = $this->isScopedAcademicAdmin()
+                ? $this->filterRowsByAllowedSedes($carreras, ['sed_id'])
+                : $carreras;
+            $this->materias = $this->isScopedAcademicAdmin()
+                ? $this->filterRowsByAllowedSedes($materias, ['sed_id', 'rsc_idsed', 'imi_idsed'])
+                : $materias;
+
             $this->extracto = $toArrayMap($service->extractoAcademico($aluId));
-            $this->materias = $toArrayMap($service->materiasInscriptas($aluId));
             $this->deudas = $toArrayMap($service->deudas($aluId));
             $this->asistencia = $toArrayMap($service->asistencia($aluId));
             $this->malla = $toArrayMap($service->mallaCurricular($aluId));
@@ -61,11 +89,108 @@ new #[Layout('layouts.app')] class extends Component
     public function limpiar(): void
     {
         $this->reset();
+        $this->allowedSedeIds = $this->resolveAllowedSedeIds();
+        $this->allowedAcademicUnitNames = $this->resolveAllowedAcademicUnitNames();
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    protected function resolveAllowedSedeIds(): array
+    {
+        /** @var ?User $user */
+        $user = Auth::user();
+
+        if (! $user || ! $user->isAcademicUnitAdmin()) {
+            return [];
+        }
+
+        return $user->managedSedeIds();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function resolveAllowedAcademicUnitNames(): array
+    {
+        /** @var ?User $user */
+        $user = Auth::user();
+
+        if (! $user || ! $user->isAcademicUnitAdmin()) {
+            return [];
+        }
+
+        return $user->academicUnitScopes()
+            ->with('academicUnit:id,name')
+            ->get()
+            ->pluck('academicUnit.name')
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    protected function isScopedAcademicAdmin(): bool
+    {
+        /** @var ?User $user */
+        $user = Auth::user();
+
+        return $user?->isAcademicUnitAdmin() ?? false;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @param  array<int, string>  $candidateFields
+     * @return array<int, array<string, mixed>>
+     */
+    protected function filterRowsByAllowedSedes(array $rows, array $candidateFields): array
+    {
+        return array_values(array_filter($rows, fn (array $row): bool => $this->rowMatchesAllowedSede($row, $candidateFields)));
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $carreras
+     * @param  array<int, array<string, mixed>>  $materias
+     */
+    protected function studentBelongsToManagedAcademicUnit(array $carreras, array $materias): bool
+    {
+        return $this->filterRowsByAllowedSedes($carreras, ['sed_id']) !== []
+            || $this->filterRowsByAllowedSedes($materias, ['sed_id', 'rsc_idsed', 'imi_idsed']) !== [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<int, string>  $candidateFields
+     */
+    protected function rowMatchesAllowedSede(array $row, array $candidateFields): bool
+    {
+        foreach ($candidateFields as $field) {
+            $value = $row[$field] ?? null;
+
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            if (in_array((int) $value, $this->allowedSedeIds, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }; ?>
 
 <div>
     <x-slot name="header">Consulta de Alumnos</x-slot>
+
+    @if (! empty($allowedAcademicUnitNames))
+        <div class="alert alert-info mb-6">
+            <x-icon name="o-shield-check" class="w-5 h-5" />
+            <div class="space-y-1">
+                <p class="font-medium">Consulta restringida por facultad</p>
+                <p class="text-sm">Solo se habilitan alumnos vinculados a: {{ implode(', ', $allowedAcademicUnitNames) }}.</p>
+            </div>
+        </div>
+    @endif
 
     {{-- Buscador --}}
     <div class="card bg-base-100 shadow-sm mb-6">

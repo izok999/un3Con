@@ -1,4 +1,6 @@
 @php
+    use App\Enums\RoleName;
+
     $theme = request()->cookie('une-theme');
     $theme = in_array($theme, ['uneTheme', 'uneThemeDark'], true) ? $theme : 'uneTheme';
 @endphp
@@ -33,9 +35,21 @@
         </script>
     </head>
     <body class="min-h-screen font-sans antialiased bg-app-pattern text-base-content">
+        {{-- Canvas de partículas ambiente: misma red del login, muy sutil, fija detrás de todo --}}
+        <canvas id="app-particles"
+                data-particles
+                data-particles-opacity="0.20"
+                data-particles-line-opacity="0.30"
+            data-particles-count-desktop="72"
+            data-particles-count-mobile="24"
+                data-particles-dist="110"
+                class="fixed inset-0 w-full h-full pointer-events-none"
+                style="z-index: 0"></canvas>
+
         @php
-            $isAlumno = auth()->user()?->hasRole('ALUMNO') ?? false;
-            $isAdmin = auth()->user()?->hasRole('ADMIN') ?? false;
+            $isAlumno = auth()->user()?->hasRole(RoleName::Alumno->value) ?? false;
+            $isAdmin = auth()->user()?->hasAnyRole(RoleName::administrationValues()) ?? false;
+            $isGeneralAdmin = auth()->user()?->hasRole(RoleName::Admin->value) ?? false;
 
             $navigationLinks = [
                 'home' => [
@@ -51,19 +65,19 @@
                     'route' => 'alumno.carreras',
                     'active' => ['alumno.carreras', 'alumno.carreras.*'],
                 ],
-                'extracto' => [
-                    'title' => 'Extracto Académico',
-                    'mobile_title' => 'Extracto',
-                    'icon' => 'o-document-text',
-                    'route' => 'alumno.extracto',
-                    'active' => ['alumno.extracto'],
-                ],
                 'materias' => [
                     'title' => 'Materias Inscriptas',
                     'mobile_title' => 'Materias',
                     'icon' => 'o-book-open',
                     'route' => 'alumno.materias',
                     'active' => ['alumno.materias'],
+                ],
+                'evaluacion_docente' => [
+                    'title' => 'Evaluación Docente',
+                    'mobile_title' => 'Eval Doc',
+                    'icon' => 'o-clipboard-document-check',
+                    'route' => 'alumno.evaluacion-docente',
+                    'active' => ['alumno.evaluacion-docente', 'alumno.evaluacion-docente.form'],
                 ],
                 'deudas' => [
                     'title' => 'Mis Deudas',
@@ -78,7 +92,7 @@
                 [
                     'title' => 'Académico',
                     'icon' => 'o-academic-cap',
-                    'items' => ['carreras', 'extracto', 'materias'],
+                    'items' => ['carreras', 'materias', 'evaluacion_docente'],
                 ],
                 [
                     'title' => 'Finanzas',
@@ -87,7 +101,7 @@
                 ],
             ];
 
-            $alumnoMobileNavigation = ['home', 'carreras', 'extracto', 'materias', 'deudas'];
+            $alumnoMobileNavigation = ['home', 'carreras', 'materias', 'evaluacion_docente', 'deudas'];
         @endphp
 
         <x-main full-width>
@@ -128,10 +142,26 @@
                         <x-menu-sub title="Administración" icon="o-cog-6-tooth">
                             <x-menu-item title="Dashboard Admin" icon="o-chart-bar" link="{{ route('admin.dashboard') }}" />
                             <x-menu-item title="Consulta Alumnos" icon="o-magnifying-glass" link="{{ route('admin.consulta-alumno') }}" />
+                            @if ($isGeneralAdmin)
+                                <x-menu-item title="Admins por Facultad" icon="o-user-group" link="{{ route('admin.academic-unit-admins') }}" />
+                            @endif
+                        </x-menu-sub>
+                        <x-menu-sub title="Evaluación Docente" icon="o-clipboard-document-check">
+                            <x-menu-item title="Docentes" icon="o-clipboard-document-list" link="{{ route('admin.evaluacion-docente.docentes') }}" />
+                            <x-menu-item title="Resultados" icon="o-chart-bar" link="{{ route('admin.evaluacion-docente.resultados') }}" />
+                            @if ($isGeneralAdmin)
+                                <x-menu-item title="Configuración" icon="o-adjustments-horizontal" link="{{ route('admin.evaluacion-docente.configuracion') }}" />
+                            @endif
                         </x-menu-sub>
                     @endif
 
                     <x-menu-separator />
+                    <x-menu-item
+                        title="Normativas"
+                        icon="o-scale"
+                        link="{{ route('normativas.index') }}"
+                        route="normativas.index"
+                    />
                     <x-menu-item title="Mi Perfil" icon="o-user" link="{{ route('profile') }}" />
                 </x-menu>
             </x-slot:sidebar>
@@ -201,7 +231,7 @@
             <nav
                 data-testid="alumno-mobile-bottom-nav"
                 aria-label="Navegacion principal del alumno"
-                class="mobile-bottom-nav glass-navbar fixed inset-x-4 z-[60] lg:hidden"
+                class="mobile-bottom-nav glass-navbar fixed inset-x-4 z-60 lg:hidden"
             >
                 <div class="grid grid-cols-5 gap-1 p-2">
                     @foreach ($alumnoMobileNavigation as $itemKey)

@@ -99,16 +99,37 @@
    ============================================ */
 @layer utilities {
     .bg-app-pattern {
-        background-color: #e8ede4;
+        background-color: #ffffff;
         background-image:
-            url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='1' cy='1' r='1.2' fill='%236A9149' fill-opacity='0.18'/%3E%3C/svg%3E");
+            radial-gradient(140% 52% at 50% 100%, rgb(255 255 255 / 0.90) 0%, rgb(255 255 255 / 0.55) 22%, transparent 52%),
+            linear-gradient(180deg, rgb(255 255 255 / 0) 0%, rgb(255 255 255 / 0) 84%, rgb(255 255 255 / 0.26) 92%, rgb(255 255 255 / 0.42) 100%),
+            linear-gradient(30deg, rgb(229 231 235 / 0.32) 12%, transparent 12.5%, transparent 87%, rgb(229 231 235 / 0.32) 87.5%, rgb(229 231 235 / 0.32)),
+            linear-gradient(150deg, rgb(229 231 235 / 0.32) 12%, transparent 12.5%, transparent 87%, rgb(229 231 235 / 0.32) 87.5%, rgb(229 231 235 / 0.32)),
+            linear-gradient(30deg, rgb(229 231 235 / 0.32) 12%, transparent 12.5%, transparent 87%, rgb(229 231 235 / 0.32) 87.5%, rgb(229 231 235 / 0.32)),
+            linear-gradient(150deg, rgb(229 231 235 / 0.32) 12%, transparent 12.5%, transparent 87%, rgb(229 231 235 / 0.32) 87.5%, rgb(229 231 235 / 0.32)),
+            linear-gradient(60deg, rgb(229 231 235 / 0.16) 25%, transparent 25.5%, transparent 75%, rgb(229 231 235 / 0.16) 75%, rgb(229 231 235 / 0.16)),
+            linear-gradient(60deg, rgb(229 231 235 / 0.16) 25%, transparent 25.5%, transparent 75%, rgb(229 231 235 / 0.16) 75%, rgb(229 231 235 / 0.16));
+        background-size: auto, auto, 52px 92px, 52px 92px, 52px 92px, 52px 92px, 52px 92px, 52px 92px;
+        background-position: center bottom, 0 0, 0 0, 0 0, 26px 46px, 26px 46px, 0 0, 26px 46px;
+        background-repeat: no-repeat, no-repeat, repeat, repeat, repeat, repeat, repeat, repeat;
+        background-attachment: fixed, fixed, scroll, scroll, scroll, scroll, scroll, scroll;
     }
 
     [data-theme="uneThemeDark"] .bg-app-pattern {
-        background-color: #16181f;
+        background-color: #1e2028;
         background-image:
-            url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='1' cy='1' r='1' fill='%23ffffff' fill-opacity='0.04'/%3E%3C/svg%3E"),
-            linear-gradient(135deg, #1a2e12 0%, #1e2814 45%, #0d2a05 100%);
+            radial-gradient(140% 52% at 50% 100%, rgb(30 32 40 / 0.94) 0%, rgb(30 32 40 / 0.65) 22%, transparent 52%),
+            linear-gradient(180deg, rgb(30 32 40 / 0) 0%, rgb(30 32 40 / 0) 84%, rgb(30 32 40 / 0.30) 92%, rgb(30 32 40 / 0.48) 100%),
+            linear-gradient(30deg, rgb(255 255 255 / 0.06) 12%, transparent 12.5%, transparent 87%, rgb(255 255 255 / 0.06) 87.5%, rgb(255 255 255 / 0.06)),
+            linear-gradient(150deg, rgb(255 255 255 / 0.06) 12%, transparent 12.5%, transparent 87%, rgb(255 255 255 / 0.06) 87.5%, rgb(255 255 255 / 0.06)),
+            linear-gradient(30deg, rgb(255 255 255 / 0.06) 12%, transparent 12.5%, transparent 87%, rgb(255 255 255 / 0.06) 87.5%, rgb(255 255 255 / 0.06)),
+            linear-gradient(150deg, rgb(255 255 255 / 0.06) 12%, transparent 12.5%, transparent 87%, rgb(255 255 255 / 0.06) 87.5%, rgb(255 255 255 / 0.06)),
+            linear-gradient(60deg, rgb(255 255 255 / 0.04) 25%, transparent 25.5%, transparent 75%, rgb(255 255 255 / 0.04) 75%, rgb(255 255 255 / 0.04)),
+            linear-gradient(60deg, rgb(255 255 255 / 0.04) 25%, transparent 25.5%, transparent 75%, rgb(255 255 255 / 0.04) 75%, rgb(255 255 255 / 0.04));
+        background-size: auto, auto, 52px 92px, 52px 92px, 52px 92px, 52px 92px, 52px 92px, 52px 92px;
+        background-position: center bottom, 0 0, 0 0, 0 0, 26px 46px, 26px 46px, 0 0, 26px 46px;
+        background-repeat: no-repeat, no-repeat, repeat, repeat, repeat, repeat, repeat, repeat;
+        background-attachment: fixed, fixed, scroll, scroll, scroll, scroll, scroll, scroll;
     }
 }
 
@@ -133,6 +154,13 @@
         box-shadow: 0 20px 48px rgb(0 0 0 / 0.20);
     }
 
+    @media (hover: none) {
+        .glass-card:hover {
+            transform: none;
+            box-shadow: 0 8px 32px rgb(0 0 0 / 0.15);
+        }
+    }
+
     /* Superficie glass sin hover: dropdowns, popovers */
     .glass-surface {
         background-color: rgb(255 255 255 / 0.80) !important;
@@ -144,13 +172,18 @@
 
     /* Sidebar glass */
     .glass-sidebar {
-        background-color: rgb(255 255 255 / 0.40) !important;
-        -webkit-backdrop-filter: blur(24px);
-        backdrop-filter: blur(24px);
-        border: 1px solid rgb(255 255 255 / 0.20) !important;
+        background-color: rgb(255 255 255 / 0.70) !important;
+        background-image: none;
+        -webkit-backdrop-filter: blur(20px);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgb(255 255 255 / 0.30) !important;
         border-radius: 0 1.75rem 1.75rem 0 !important;
-        box-shadow: 0 18px 40px rgb(0 0 0 / 0.18);
+        box-shadow: 0 10px 28px rgb(0 0 0 / 0.10);
         overflow: hidden;
+        background-clip: padding-box;
+        clip-path: inset(0 round 0 1.75rem 1.75rem 0);
+        isolation: isolate;
+        transition: background-color 0.3s ease, box-shadow 0.3s ease;
     }
 
     /* Topbar / navbar glass */
@@ -177,22 +210,24 @@
     .route-transition-shell {
         transform-origin: center top;
         will-change: transform, opacity, filter;
+        backface-visibility: hidden;
+        transform: translateZ(0);
     }
 
     html[data-route-transition="out"] [data-route-shell] {
-        animation: glass-route-out 180ms ease-in forwards;
+        animation: glass-route-out 110ms ease-out forwards;
     }
 
     html[data-route-transition="in"] [data-route-shell] {
-        animation: glass-route-in 420ms cubic-bezier(0.22, 1, 0.36, 1);
+        animation: glass-route-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
     }
 
     .dashboard-stagger [data-dashboard-stagger-item] {
         opacity: 0;
         transform-origin: center top;
         will-change: transform, opacity, filter;
-        animation: dashboard-card-in 760ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
-        animation-delay: calc(var(--dashboard-stagger-index, 0) * 110ms + 40ms);
+        animation: dashboard-card-in 430ms cubic-bezier(0.16, 1, 0.3, 1) both;
+        animation-delay: calc(var(--dashboard-stagger-index, 0) * 65ms + 20ms);
     }
 
     .dashboard-stagger [data-dashboard-stagger-item] > .glass-card,
@@ -211,8 +246,8 @@
         opacity: 0;
         transform: scale(0.94);
         pointer-events: none;
-        animation: dashboard-glass-sheen 920ms ease-out both;
-        animation-delay: calc(var(--dashboard-stagger-index, 0) * 110ms + 120ms);
+        animation: dashboard-glass-sheen 520ms ease-out both;
+        animation-delay: calc(var(--dashboard-stagger-index, 0) * 65ms + 84ms);
     }
 
     .mobile-bottom-nav {
@@ -233,11 +268,11 @@
     }
 
     .mobile-bottom-nav-link[aria-current="page"] {
-        animation: mobile-nav-activate 380ms cubic-bezier(0.22, 1, 0.36, 1);
+        animation: mobile-nav-activate 220ms cubic-bezier(0.22, 1, 0.36, 1);
     }
 
     .mobile-bottom-nav-link[aria-current="page"] svg {
-        animation: mobile-nav-icon-pop 380ms cubic-bezier(0.22, 1, 0.36, 1);
+        animation: mobile-nav-icon-pop 220ms cubic-bezier(0.22, 1, 0.36, 1);
     }
 
     .mobile-bottom-nav-link::after {
@@ -252,7 +287,7 @@
     }
 
     html[data-route-transition="in"] .mobile-bottom-nav-link[aria-current="page"]::after {
-        animation: mobile-nav-sheen 520ms ease-out;
+        animation: mobile-nav-sheen 260ms ease-out;
     }
 
     @media (min-width: 64rem) {
@@ -283,22 +318,16 @@
 
         to {
             opacity: 0;
-            filter: blur(10px);
-            transform: translateY(18px) scale(0.985);
+            filter: blur(2px);
+            transform: translateY(6px) scale(0.998);
         }
     }
 
     @keyframes glass-route-in {
         from {
             opacity: 0;
-            filter: blur(18px);
-            transform: translateY(24px) scale(0.982);
-        }
-
-        60% {
-            opacity: 1;
-            filter: blur(0);
-            transform: translateY(-2px) scale(1.002);
+            filter: blur(4px);
+            transform: translateY(10px) scale(0.998);
         }
 
         to {
@@ -311,14 +340,14 @@
     @keyframes dashboard-card-in {
         from {
             opacity: 0;
-            filter: blur(18px) saturate(0.82);
-            transform: translateY(34px) scale(0.955);
+            filter: blur(6px) saturate(0.94);
+            transform: translateY(18px) scale(0.988);
         }
 
-        55% {
-            opacity: 1;
-            filter: blur(0) saturate(1);
-            transform: translateY(-4px) scale(1.012);
+        62% {
+            opacity: 0.88;
+            filter: blur(1px) saturate(0.99);
+            transform: translateY(4px) scale(0.998);
         }
 
         to {
@@ -331,44 +360,44 @@
     @keyframes dashboard-glass-sheen {
         from {
             opacity: 0;
-            transform: scale(0.94);
+            transform: scale(0.985);
         }
 
         45% {
-            opacity: 0.85;
+            opacity: 0.22;
         }
 
         to {
             opacity: 0;
-            transform: scale(1.03);
+            transform: scale(1.006);
         }
     }
 
     @keyframes mobile-nav-activate {
         from {
-            transform: translateY(10px) scale(0.92);
+            transform: translateY(4px) scale(0.97);
             box-shadow: 0 0 0 rgb(106 145 73 / 0);
         }
 
-        65% {
-            transform: translateY(-3px) scale(1.04);
-            box-shadow: 0 12px 28px rgb(106 145 73 / 0.24);
+        60% {
+            transform: translateY(-1px) scale(1.01);
+            box-shadow: 0 8px 18px rgb(106 145 73 / 0.18);
         }
 
         to {
             transform: translateY(0) scale(1);
-            box-shadow: 0 10px 22px rgb(106 145 73 / 0.18);
+            box-shadow: 0 8px 16px rgb(106 145 73 / 0.14);
         }
     }
 
     @keyframes mobile-nav-icon-pop {
         from {
-            transform: scale(0.75);
-            opacity: 0.72;
+            transform: scale(0.92);
+            opacity: 0.84;
         }
 
         60% {
-            transform: scale(1.14);
+            transform: scale(1.03);
             opacity: 1;
         }
 
@@ -408,6 +437,15 @@
     #main-drawer ~ .drawer-side > .glass-sidebar {
         position: relative;
         z-index: 81;
+        background-color: rgb(255 255 255 / 0.70) !important;
+        background-image: none;
+        border-radius: 0 1.75rem 1.75rem 0 !important;
+        overflow: hidden;
+        clip-path: inset(0 round 0 1.75rem 1.75rem 0);
+    }
+
+    #main-drawer ~ .drawer-side > :not(.drawer-overlay) {
+        background-color: transparent !important;
     }
 
     /* Botones: mismo lenguaje redondeado del tema */
@@ -519,7 +557,8 @@
     }
 
     [data-theme="uneThemeDark"] .glass-sidebar {
-        background-color: rgb(255 255 255 / 0.05) !important;
+        background-color: rgb(22 24 31 / 0.80) !important;
+        background-image: none;
         border-color: rgb(255 255 255 / 0.08) !important;
     }
 
@@ -577,6 +616,85 @@
         .file-input
     )::placeholder {
         color: rgb(229 231 235 / 0.45);
+    }
+
+    /* ─── Glass toasts ─── */
+    /* Applies the app's glass aesthetic to all MaryUI / DaisyUI toast notifications */
+    .toast .alert {
+        /* Strip DaisyUI depth/noise effects */
+        background-image: none !important;
+        box-shadow: 0 10px 36px rgb(0 0 0 / 0.16), 0 2px 8px rgb(0 0 0 / 0.08) !important;
+        /* Glass base */
+        background-color: rgb(255 255 255 / 0.82) !important;
+        -webkit-backdrop-filter: blur(20px);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgb(255 255 255 / 0.38) !important;
+        border-radius: var(--rounded-box, 1.5rem) !important;
+        color: var(--color-base-content) !important;
+    }
+
+    /* Outer container: shadow + min-width for readability */
+    .toast {
+        min-width: 18rem;
+        background-color: transparent !important;
+        border-radius: var(--rounded-box, 1.5rem) !important;
+        box-shadow: none !important;
+        overflow: hidden;
+    }
+
+    .toast .progress {
+        background-color: transparent !important;
+    }
+
+    /* Semantic color tints (background + border + icon/text color) */
+    .toast .alert-success {
+        background-color: rgb(106 145 73 / 0.16) !important;
+        border-color: rgb(106 145 73 / 0.42) !important;
+        color: var(--color-success) !important;
+    }
+
+    .toast .alert-info {
+        background-color: rgb(106 145 73 / 0.16) !important;
+        border-color: rgb(106 145 73 / 0.42) !important;
+        color: var(--color-info) !important;
+    }
+
+    .toast .alert-warning {
+        background-color: rgb(204 153 51 / 0.16) !important;
+        border-color: rgb(204 153 51 / 0.42) !important;
+        color: var(--color-warning) !important;
+    }
+
+    .toast .alert-error {
+        background-color: rgb(175 48 48 / 0.16) !important;
+        border-color: rgb(175 48 48 / 0.42) !important;
+        color: var(--color-error) !important;
+    }
+
+    /* Dark mode */
+    [data-theme="uneThemeDark"] .toast .alert {
+        background-color: rgb(30 32 40 / 0.88) !important;
+        border-color: rgb(255 255 255 / 0.12) !important;
+        color: var(--color-base-content) !important;
+    }
+
+    [data-theme="uneThemeDark"] .toast .alert-success,
+    [data-theme="uneThemeDark"] .toast .alert-info {
+        background-color: rgb(127 179 86 / 0.20) !important;
+        border-color: rgb(127 179 86 / 0.36) !important;
+        color: var(--color-success) !important;
+    }
+
+    [data-theme="uneThemeDark"] .toast .alert-warning {
+        background-color: rgb(212 168 71 / 0.20) !important;
+        border-color: rgb(212 168 71 / 0.36) !important;
+        color: var(--color-warning) !important;
+    }
+
+    [data-theme="uneThemeDark"] .toast .alert-error {
+        background-color: rgb(212 68 68 / 0.20) !important;
+        border-color: rgb(212 68 68 / 0.36) !important;
+        color: var(--color-error) !important;
     }
 
     /* ─── Badges UNE ─── */

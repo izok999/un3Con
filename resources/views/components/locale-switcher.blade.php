@@ -4,7 +4,7 @@
         'es' => ['flag' => '🇵🇾', 'label' => 'ES'],
         'en' => ['flag' => '🇺🇸', 'label' => 'EN'],
         'pt' => ['flag' => '🇧🇷', 'label' => 'PT'],
-        'gn' => ['flag' => '🪶', 'label' => 'GN'],
+        'gn' => ['flag' => '🇵🇾', 'label' => 'GN'],
     ];
     $current = $locales[$currentLocale] ?? $locales['es'];
 @endphp
@@ -17,7 +17,7 @@
             <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
         </svg>
     </div>
-    <ul tabindex="0" class="dropdown-content menu glass-surface rounded-2xl z-[100] w-36 p-2 shadow-lg">
+    <ul tabindex="0" class="dropdown-content menu glass-surface rounded-2xl z-100 w-36 p-2 shadow-lg">
         @foreach ($locales as $code => $locale)
             <li>
                 <form method="POST" action="{{ route('locale.switch') }}">
