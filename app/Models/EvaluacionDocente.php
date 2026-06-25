@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'periodo_evaluacion_id',
     'formulario_evaluacion_id',
+    'docente_contexto_id',
     'docente_id',
     'evaluador_user_id',
     'tipo_evaluador',
@@ -44,6 +45,11 @@ class EvaluacionDocente extends Model
     public function docente(): BelongsTo
     {
         return $this->belongsTo(Docente::class);
+    }
+
+    public function docenteContexto(): BelongsTo
+    {
+        return $this->belongsTo(DocenteContexto::class);
     }
 
     public function evaluador(): BelongsTo

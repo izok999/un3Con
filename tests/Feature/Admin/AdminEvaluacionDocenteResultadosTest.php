@@ -72,6 +72,7 @@ class AdminEvaluacionDocenteResultadosTest extends TestCase
         $this->actingAs($admin);
 
         Volt::test('admin.evaluacion-docente.resultados')
+            ->call('inicializarComponente')
             ->assertSee('Evaluación 2026-1')
             ->assertSee('Evaluación 2025-2');
     }
@@ -83,6 +84,7 @@ class AdminEvaluacionDocenteResultadosTest extends TestCase
         $this->actingAs($admin);
 
         Volt::test('admin.evaluacion-docente.resultados')
+            ->call('inicializarComponente')
             ->set('selectedPeriodoId', null)
             ->assertSee('Seleccioná un período');
     }
@@ -101,6 +103,7 @@ class AdminEvaluacionDocenteResultadosTest extends TestCase
         $this->actingAs($admin);
 
         Volt::test('admin.evaluacion-docente.resultados')
+            ->call('inicializarComponente')
             ->assertSee('Todavía no hay evaluaciones enviadas');
     }
 
@@ -217,6 +220,7 @@ class AdminEvaluacionDocenteResultadosTest extends TestCase
         $this->actingAs($admin);
 
         Volt::test('admin.evaluacion-docente.resultados')
+            ->call('inicializarComponente')
             ->assertSee('Prof. Juan Pérez')
             ->assertSee('1234567')
             ->assertSee('2 evaluadores')
@@ -270,7 +274,8 @@ class AdminEvaluacionDocenteResultadosTest extends TestCase
 
         $this->actingAs($admin);
 
-        $test = Volt::test('admin.evaluacion-docente.resultados');
+        $test = Volt::test('admin.evaluacion-docente.resultados')
+            ->call('inicializarComponente');
 
         // Should show empty state since the only evaluation is a draft
         $this->assertEmpty($test->get('resultados'));

@@ -1,11 +1,11 @@
 <?php
 
 use App\Models\Docente;
+use App\Models\DocenteContexto;
 use App\Models\EvaluacionDocente;
 use App\Models\FormularioEvaluacion;
 use App\Models\PeriodoEvaluacion;
 use App\Services\AlumnoExternoService;
-use App\Services\EvaluacionDocente\DocentesElegiblesResolver;
 use App\Services\EvaluacionDocente\GuardarEvaluacionDocente;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -16,6 +16,8 @@ use Livewire\Volt\Component;
 new #[Layout('layouts.app')] class extends Component
 {
     public Docente $docente;
+
+    public DocenteContexto $contexto;
 
     public ?PeriodoEvaluacion $periodo = null;
 
@@ -31,18 +33,25 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $nombreCarrera = '';
 
+    public string $materiaNombre = '';
+
+    public string $materiaTurno = '';
+
     public function boot(): void
     {
         $this->criterios = collect();
     }
 
-    public function mount(Docente $docente, DocentesElegiblesResolver $resolver): void
+    public function mount(Docente $docente, DocenteContexto $contexto): void
     {
         $user = Auth::user();
 
         abort_unless($user, 403);
+        abort_if($docente->id !== $contexto->docente_id, 403);
+        abort_unless($contexto->activo, 403);
 
         $this->docente = $docente;
+        $this->contexto = $contexto;
         $this->periodo = PeriodoEvaluacion::query()
             ->where('activo', true)
             ->orderByDesc('fecha_inicio')
@@ -66,27 +75,66 @@ new #[Layout('layouts.app')] class extends Component
             return;
         }
 
-        $contexto = $resolver->contextoParaAlumno($user, $docente);
-        abort_if($contexto === null, 403);
+        // Build contexto snapshot from the DocenteContexto
+        $this->contextoSnapshot = array_filter([
+            'car_id' => $contexto->car_id,
+            'sed_id' => $contexto->sed_id,
+            'ple_id' => $contexto->ple_id,
+            'mi2_id' => $contexto->mi2_id,
+            'tur_id' => $contexto->tur_id,
+            'sec_id' => $contexto->sec_id,
+            'materias' => $contexto->mi2_id !== null
+                ? [['mi2_id' => $contexto->mi2_id, 'materia' => '', 'tur_id' => $contexto->tur_id ?? '', 'turno' => '']]
+                : [],
+        ], fn (mixed $value): bool => $value !== null && $value !== []);
 
-        $this->contextoSnapshot = $contexto;
-
-        if (isset($contexto['car_id'])) {
+        if ($contexto->car_id !== null) {
             try {
                 $carreras = app(AlumnoExternoService::class)->catCarreras();
-                $this->nombreCarrera = $carreras[(int) $contexto['car_id']] ?? "Carrera #{$contexto['car_id']}";
+                $this->nombreCarrera = $carreras[(int) $contexto->car_id] ?? "Carrera #{$contexto->car_id}";
             } catch (\Throwable) {
-                $this->nombreCarrera = "Carrera #{$contexto['car_id']}";
+                $this->nombreCarrera = "Carrera #{$contexto->car_id}";
             }
         }
+
+        // Resolve materia name
+        if ($contexto->mi2_id !== null) {
+            try {
+                $materiasMap = app(AlumnoExternoService::class)->catMateriasPorIds([$contexto->mi2_id]);
+                $this->materiaNombre = $materiasMap[(int) $contexto->mi2_id] ?? "Materia #{$contexto->mi2_id}";
+            } catch (\Throwable) {
+                $this->materiaNombre = "Materia #{$contexto->mi2_id}";
+            }
+        }
+
+        // Resolve turno
+        if ($contexto->tur_id !== null) {
+            try {
+                $turnos = app(AlumnoExternoService::class)->catTurnos();
+                $this->materiaTurno = $turnos[(int) $contexto->tur_id] ?? '';
+            } catch (\Throwable) {
+                $this->materiaTurno = '';
+            }
+        }
+
+        // Update snapshot with resolved names
+        $this->contextoSnapshot['materias'] = [
+            [
+                'mi2_id' => $contexto->mi2_id,
+                'materia' => $this->materiaNombre,
+                'tur_id' => $contexto->tur_id ?? '',
+                'turno' => $this->materiaTurno,
+            ],
+        ];
 
         if (EvaluacionDocente::query()
             ->where('periodo_evaluacion_id', $this->periodo->id)
             ->where('formulario_evaluacion_id', $this->formulario->id)
+            ->where('docente_contexto_id', $contexto->id)
             ->where('docente_id', $docente->id)
             ->where('evaluador_user_id', $user->id)
             ->exists()) {
-            session()->flash('status', 'Ya registraste una evaluación para este docente en el periodo activo.');
+            session()->flash('status', 'Ya registraste una evaluación para este docente en esta materia en el periodo activo.');
             $this->redirectRoute('alumno.evaluacion-docente', navigate: true);
 
             return;
@@ -132,6 +180,7 @@ new #[Layout('layouts.app')] class extends Component
                 FormularioEvaluacion::TIPO_ALUMNO,
                 $payload,
                 $this->contextoSnapshot,
+                $this->contexto,
             );
         } catch (ValidationException $exception) {
             throw $exception;
@@ -166,26 +215,18 @@ new #[Layout('layouts.app')] class extends Component
                     @if ($nombreCarrera !== '')
                         <p class="text-sm text-base-content/70">{{ $nombreCarrera }}</p>
                     @endif
-                </div>
-
-                @php
-                    $materiasSnapshot = $contextoSnapshot['materias'] ?? [];
-                @endphp
-                @if (! empty($materiasSnapshot))
-                    <div class="rounded-2xl border border-base-300 bg-base-200/40 p-4 space-y-2">
-                        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Materia{{ count($materiasSnapshot) !== 1 ? 's' : '' }} evaluada{{ count($materiasSnapshot) !== 1 ? 's' : '' }}</p>
-                        <div class="flex flex-wrap gap-2">
-                            @foreach ($materiasSnapshot as $m)
-                                <span class="badge badge-soft badge-sm">
-                                    {{ $m['materia'] ?? "ID {$m['mi2_id']}" }}
-                                    @if (! empty($m['turno']))
-                                        · {{ $m['turno'] }}
-                                    @endif
-                                </span>
-                            @endforeach
+                    @if ($materiaNombre !== '')
+                        <div class="rounded-2xl border border-base-300 bg-base-200/40 p-3 mt-2">
+                            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Materia a evaluar</p>
+                            <p class="font-medium text-base-content mt-1">
+                                {{ $materiaNombre }}
+                                @if ($materiaTurno !== '')
+                                    <span class="text-base-content/60">· {{ $materiaTurno }}</span>
+                                @endif
+                            </p>
                         </div>
-                    </div>
-                @endif
+                    @endif
+                </div>
 
                 <div class="rounded-2xl border border-base-300 bg-base-200/40 p-4 text-sm text-base-content/80">
                     Utilizá la escala de {{ $formulario?->escala_min }} a {{ $formulario?->escala_max }} para los criterios numéricos. Las observaciones generales no afectan el puntaje total.

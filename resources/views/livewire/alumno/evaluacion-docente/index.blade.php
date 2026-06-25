@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Docente;
 use App\Models\EvaluacionDocente;
 use App\Models\PeriodoEvaluacion;
 use App\Models\User;
@@ -15,6 +16,7 @@ new #[Layout('layouts.app')] class extends Component
 {
     public Collection $periodos;
 
+    /** @var Collection<int, array{docente: Docente, contexto: \App\Models\DocenteContexto}> */
     public Collection $docentes;
 
     public Collection $evaluaciones;
@@ -23,13 +25,17 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $selectedPeriodoId = '';
 
+    /** @var array<int, int> docenteContextoIds evaluados en periodo activo */
     public array $evaluadosEnPeriodoActivo = [];
 
-    /** @var array<int, array<int, array{mi2_id: int|string, materia: string, tur_id: int|string, turno: string}>> */
-    public array $materiasPorDocente = [];
+    /** @var array<int, string> */
+    public array $catCarreras = [];
 
     /** @var array<int, string> */
-    public array $carrerasPorDocente = [];
+    public array $catMaterias = [];
+
+    /** @var array<int, string> */
+    public array $catTurnos = [];
 
     public string $error = '';
 
@@ -72,6 +78,15 @@ new #[Layout('layouts.app')] class extends Component
         if (! $this->periodoActivo) {
             $this->error = 'No hay un periodo de evaluación activo en este momento.';
         }
+
+        // Load catalogs for display
+        try {
+            $service = app(AlumnoExternoService::class);
+            $this->catCarreras = $service->catCarreras();
+            $this->catTurnos = $service->catTurnos();
+        } catch (\Throwable) {
+            // Catalogs unavailable
+        }
     }
 
     public function cargarDocentes(DocentesElegiblesResolver $resolver): void
@@ -82,95 +97,35 @@ new #[Layout('layouts.app')] class extends Component
 
         $this->docentes = $this->periodoActivo ? $resolver->paraAlumno($user) : collect();
 
-        $this->resolverContextosPorDocente($resolver, $user);
-
+        // Check already evaluated per context
         $this->evaluadosEnPeriodoActivo = $this->periodoActivo
             ? EvaluacionDocente::query()
                 ->where('evaluador_user_id', $user->id)
                 ->where('periodo_evaluacion_id', $this->periodoActivo->id)
-                ->pluck('docente_id')
+                ->whereNotNull('docente_contexto_id')
+                ->pluck('docente_contexto_id')
                 ->map(fn (mixed $id): int => (int) $id)
                 ->all()
             : [];
 
-        $this->loadEvaluaciones();
-        $this->ready = true;
-    }
-
-    protected function resolverContextosPorDocente(DocentesElegiblesResolver $resolver, User $user): void
-    {
-        try {
-            $externo = app(AlumnoExternoService::class);
-            $catCarreras = $externo->catCarreras();
-            $catTurnos = $externo->catTurnos();
-        } catch (\Throwable) {
-            $catCarreras = [];
-            $catTurnos = [];
-        }
-
-        // Batch lookup: collect all unique mi2_ids across all docentes
-        $allMi2Ids = $this->docentes
-            ->flatMap(fn ($d) => $d->contextos->filter(fn ($ctx) => $ctx->mi2_id !== null && $ctx->activo)->pluck('mi2_id'))
+        // Resolve materia names for display
+        $mi2Ids = $this->docentes
+            ->pluck('contexto.mi2_id')
+            ->filter()
             ->unique()
             ->values()
-            ->toArray();
+            ->all();
 
-        try {
-            $nombresMaterias = ! empty($allMi2Ids) ? $externo->catMateriasPorIds($allMi2Ids) : [];
-        } catch (\Throwable) {
-            $nombresMaterias = [];
+        if (! empty($mi2Ids)) {
+            try {
+                $this->catMaterias = app(AlumnoExternoService::class)->catMateriasPorIds($mi2Ids);
+            } catch (\Throwable) {
+                $this->catMaterias = [];
+            }
         }
 
-        foreach ($this->docentes as $docente) {
-            $contexto = $resolver->contextoParaAlumno($user, $docente);
-
-            if ($contexto === null) {
-                continue;
-            }
-
-            $vistas = [];
-
-            $materias = [];
-            foreach ($docente->contextos as $ctx) {
-                if ($ctx->mi2_id === null || ! $ctx->activo) {
-                    continue;
-                }
-
-                $clave = $ctx->mi2_id.'|'.($ctx->tur_id ?? 'null');
-                if (isset($vistas[$clave])) {
-                    continue;
-                }
-
-                $nombreMateria = $nombresMaterias[(int) $ctx->mi2_id] ?? null;
-                $nombreTurno = $ctx->tur_id !== null ? ($catTurnos[(int) $ctx->tur_id] ?? null) : null;
-
-                $materias[] = [
-                    'mi2_id' => $ctx->mi2_id,
-                    'materia' => $nombreMateria ?? "ID {$ctx->mi2_id}",
-                    'tur_id' => $ctx->tur_id ?? '',
-                    'turno' => $nombreTurno ?? '',
-                ];
-
-                $vistas[$clave] = true;
-            }
-
-            $this->materiasPorDocente[$docente->id] = $materias;
-
-            // Carreras
-            $carIds = $docente->contextos
-                ->filter(fn ($ctx) => $ctx->car_id !== null && $ctx->activo)
-                ->pluck('car_id')
-                ->unique()
-                ->values()
-                ->toArray();
-
-            $carreras = array_map(
-                fn (int $carId): string => $catCarreras[$carId] ?? "Carrera #{$carId}",
-                $carIds,
-            );
-
-            $this->carrerasPorDocente[$docente->id] = $carreras;
-        }
+        $this->loadEvaluaciones();
+        $this->ready = true;
     }
 
     public function updatedSelectedPeriodoId(): void
@@ -231,7 +186,7 @@ new #[Layout('layouts.app')] class extends Component
                     <div class="card-body gap-1">
                         <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Disponibles</p>
                         <p class="text-3xl font-semibold text-primary">{{ $docentes->count() }}</p>
-                        <p class="text-sm text-base-content/65">Docentes elegibles para evaluar</p>
+                        <p class="text-sm text-base-content/65">Materias elegibles para evaluar</p>
                     </div>
                 </article>
 
@@ -248,7 +203,7 @@ new #[Layout('layouts.app')] class extends Component
         <section class="space-y-3">
             <div class="space-y-1">
                 <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Carga disponible</p>
-                <h2 class="text-lg font-semibold text-base-content">Seleccioná un docente para completar tu evaluación</h2>
+                <h2 class="text-lg font-semibold text-base-content">Seleccioná un docente y materia para completar tu evaluación</h2>
             </div>
 
             @if (! $ready)
@@ -259,9 +214,14 @@ new #[Layout('layouts.app')] class extends Component
                 <x-mary-alert title="Todavía no hay docentes locales asociados a tu contexto académico para este periodo." icon="o-information-circle" class="alert-info" />
             @else
                 <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                    @foreach ($docentes as $docente)
+                    @foreach ($docentes as $item)
                         @php
-                            $yaEvaluado = in_array($docente->id, $evaluadosEnPeriodoActivo, true);
+                            $docente = $item['docente'];
+                            $contexto = $item['contexto'];
+                            $yaEvaluado = in_array((int) $contexto->id, $evaluadosEnPeriodoActivo, true);
+                            $materiaNombre = $catMaterias[(int) $contexto->mi2_id] ?? "Materia #{$contexto->mi2_id}";
+                            $turnoNombre = $catTurnos[(int) $contexto->tur_id] ?? '';
+                            $carreraNombre = $catCarreras[(int) $contexto->car_id] ?? '';
                         @endphp
 
                         <article class="glass-card card">
@@ -271,29 +231,17 @@ new #[Layout('layouts.app')] class extends Component
                                         <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Docente habilitado</p>
                                         <h3 class="card-title text-base text-base-content">{{ $docente->nombre }}</h3>
                                         <p class="text-sm text-base-content/65">Documento: {{ $docente->documento ?? 'Sin dato' }}</p>
-                                        @php
-                                            $materias = $materiasPorDocente[$docente->id] ?? [];
-                                            $carreras = $carrerasPorDocente[$docente->id] ?? [];
-                                        @endphp
-                                        @if (! empty($carreras))
-                                            <div class="flex flex-wrap gap-1 mt-1">
-                                                @foreach ($carreras as $carrera)
-                                                    <span class="badge badge-soft badge-xs text-xs">{{ $carrera }}</span>
-                                                @endforeach
-                                            </div>
+                                        @if ($carreraNombre !== '')
+                                            <span class="badge badge-soft badge-xs text-xs">{{ $carreraNombre }}</span>
                                         @endif
-                                        @if (! empty($materias))
-                                            <div class="flex flex-wrap gap-1 mt-1">
-                                                @foreach ($materias as $m)
-                                                    <span class="badge badge-outline badge-xs text-xs">
-                                                        {{ $m['materia'] }}
-                                                        @if (! empty($m['turno']))
-                                                            · {{ $m['turno'] }}
-                                                        @endif
-                                                    </span>
-                                                @endforeach
-                                            </div>
-                                        @endif
+                                        <div class="flex flex-wrap gap-1 mt-1">
+                                            <span class="badge badge-outline badge-xs text-xs">
+                                                {{ $materiaNombre }}
+                                                @if ($turnoNombre !== '')
+                                                    · {{ $turnoNombre }}
+                                                @endif
+                                            </span>
+                                        </div>
                                     </div>
 
                                     @if ($yaEvaluado)
@@ -308,8 +256,8 @@ new #[Layout('layouts.app')] class extends Component
                                         Evaluación ya enviada
                                     </button>
                                 @else
-                                    <a href="{{ route('alumno.evaluacion-docente.form', $docente) }}" class="btn btn-primary" wire:navigate>
-                                        Evaluar docente
+                                    <a href="{{ route('alumno.evaluacion-docente.form', [$docente, $contexto]) }}" class="btn btn-primary" wire:navigate>
+                                        Evaluar esta materia
                                     </a>
                                 @endif
                             </div>
@@ -319,34 +267,21 @@ new #[Layout('layouts.app')] class extends Component
             @endif
         </section>
 
-        <section class="space-y-3">
-            <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        @if (! $evaluaciones->isEmpty())
+            <section class="space-y-3">
                 <div class="space-y-1">
                     <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Historial</p>
-                    <h2 class="text-lg font-semibold text-base-content">Tus evaluaciones por periodo</h2>
+                    <h2 class="text-lg font-semibold text-base-content">Evaluaciones enviadas</h2>
                 </div>
 
-                <label class="form-control w-full md:max-w-xs">
-                    <span class="label-text text-sm font-medium">Periodo</span>
-                    <select wire:model.live="selectedPeriodoId" class="select select-bordered w-full">
-                        @foreach ($periodos as $periodo)
-                            <option value="{{ $periodo->id }}">{{ $periodo->nombre }}</option>
-                        @endforeach
-                    </select>
-                </label>
-            </div>
-
-            @if ($evaluaciones->isEmpty())
-                <x-mary-alert title="No registrás evaluaciones para el periodo seleccionado." icon="o-information-circle" class="alert-info" />
-            @else
-                <div class="glass-card card">
-                    <div class="card-body overflow-x-auto">
+                <div class="glass-card card overflow-hidden">
+                    <div class="overflow-x-auto">
                         <table class="table table-sm">
                             <thead>
-                                <tr>
-                                    <th>Docente</th>
-                                    <th>Formulario</th>
-                                    <th class="text-center">Puntaje</th>
+                                <tr class="border-b border-base-300">
+                                    <th class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Docente</th>
+                                    <th class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Tipo</th>
+                                    <th class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50 text-center">Puntaje</th>
                                     <th class="text-center">Estado</th>
                                     <th>Fecha</th>
                                 </tr>
@@ -367,7 +302,7 @@ new #[Layout('layouts.app')] class extends Component
                         </table>
                     </div>
                 </div>
-            @endif
-        </section>
+            </section>
+        @endif
     @endif
 </div>

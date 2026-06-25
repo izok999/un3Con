@@ -3,6 +3,7 @@
 namespace App\Services\EvaluacionDocente;
 
 use App\Models\Docente;
+use App\Models\DocenteContexto;
 use App\Models\EvaluacionDocente;
 use App\Models\FormularioCriterio;
 use App\Models\FormularioEvaluacion;
@@ -29,10 +30,11 @@ class GuardarEvaluacionDocente
         string $tipoEvaluador,
         array $respuestas,
         array $contextoSnapshot = [],
+        ?DocenteContexto $docenteContexto = null,
     ): EvaluacionDocente {
         $this->ensurePeriodoActivo($periodo);
         $this->ensureFormularioDisponible($formulario, $tipoEvaluador);
-        $this->ensureNoDuplicateEvaluation($periodo, $formulario, $docente, $evaluador);
+        $this->ensureNoDuplicateEvaluation($periodo, $formulario, $docente, $evaluador, $docenteContexto);
 
         $criterios = $formulario->criterios()
             ->where('activo', true)
@@ -58,11 +60,13 @@ class GuardarEvaluacionDocente
                 $puntajeTotal,
                 $contextoSnapshot,
                 $respuestasNormalizadas,
+                $docenteContexto,
             ): EvaluacionDocente {
                 /** @var EvaluacionDocente $evaluacion */
                 $evaluacion = EvaluacionDocente::query()->create([
                     'periodo_evaluacion_id' => $periodo->id,
                     'formulario_evaluacion_id' => $formulario->id,
+                    'docente_contexto_id' => $docenteContexto?->id,
                     'docente_id' => $docente->id,
                     'evaluador_user_id' => $evaluador->id,
                     'tipo_evaluador' => $tipoEvaluador,
@@ -134,17 +138,25 @@ class GuardarEvaluacionDocente
         FormularioEvaluacion $formulario,
         Docente $docente,
         User $evaluador,
+        ?DocenteContexto $docenteContexto = null,
     ): void {
-        $exists = EvaluacionDocente::query()
+        $query = EvaluacionDocente::query()
             ->where('periodo_evaluacion_id', $periodo->id)
             ->where('formulario_evaluacion_id', $formulario->id)
             ->where('docente_id', $docente->id)
-            ->where('evaluador_user_id', $evaluador->id)
-            ->exists();
+            ->where('evaluador_user_id', $evaluador->id);
 
-        if ($exists) {
+        if ($docenteContexto !== null) {
+            $query->where('docente_contexto_id', $docenteContexto->id);
+        }
+
+        if ($query->exists()) {
+            $message = $docenteContexto !== null
+                ? 'Ya existe una evaluación registrada para este docente en esta materia.'
+                : 'Ya existe una evaluación registrada para este docente en el periodo y formulario seleccionados.';
+
             throw ValidationException::withMessages([
-                'evaluacion' => 'Ya existe una evaluación registrada para este docente en el periodo y formulario seleccionados.',
+                'evaluacion' => $message,
             ]);
         }
     }

@@ -31,6 +31,9 @@ new class extends Component
     public array $catPeriodos = [];
 
     /** @var array<int, string> */
+    public array $catPeriodosEvaluacion = [];
+
+    /** @var array<int, string> */
     public array $catTurnos = [];
 
     /** @var array<int, string> */
@@ -378,6 +381,7 @@ new class extends Component
             'car_id' => $this->normalizeNullableInt($validated['contextoForm']['car_id'] ?? null),
             'sed_id' => $this->normalizeNullableInt($validated['contextoForm']['sed_id'] ?? null),
             'ple_id' => $this->normalizeNullableInt($validated['contextoForm']['ple_id'] ?? null),
+            'periodo_evaluacion_id' => $this->normalizeNullableInt($validated['contextoForm']['periodo_evaluacion_id'] ?? null),
             'mi2_id' => $this->normalizeNullableInt($validated['contextoForm']['mi2_id'] ?? null),
             'tur_id' => $this->normalizeNullableInt($validated['contextoForm']['tur_id'] ?? null),
             'sec_id' => $this->normalizeNullableInt($validated['contextoForm']['sec_id'] ?? null),
@@ -426,6 +430,10 @@ new class extends Component
             $parts[] = $this->catPeriodos[$payload['ple_id']] ?? "Período {$payload['ple_id']}";
         }
 
+        if ($payload['periodo_evaluacion_id']) {
+            $parts[] = $this->catPeriodosEvaluacion[$payload['periodo_evaluacion_id']] ?? "Eval #{$payload['periodo_evaluacion_id']}";
+        }
+
         return implode(' · ', $parts) ?: 'Contexto genérico';
     }
 
@@ -445,6 +453,12 @@ new class extends Component
         } catch (\Throwable) {
             // Si la base externa no está disponible los catálogos quedan vacíos
         }
+
+        $this->catPeriodosEvaluacion = \App\Models\PeriodoEvaluacion::query()
+            ->orderByDesc('fecha_inicio')
+            ->get()
+            ->mapWithKeys(fn ($p) => [$p->id => "{$p->nombre} ({$p->fecha_inicio->format('d/m/Y')} — {$p->fecha_fin->format('d/m/Y')})"])
+            ->all();
     }
 
     protected function loadDocente(): void
@@ -605,6 +619,7 @@ new class extends Component
             'contextoForm.car_id' => ['nullable', 'integer', 'min:1'],
             'contextoForm.sed_id' => $sedIdRules,
             'contextoForm.ple_id' => ['nullable', 'integer', 'min:1'],
+            'contextoForm.periodo_evaluacion_id' => ['nullable', 'integer', 'min:1', Rule::in(array_keys($this->catPeriodosEvaluacion))],
             'contextoForm.mi2_id' => ['nullable', 'integer', 'min:1'],
             'contextoForm.tur_id' => ['nullable', 'integer', 'min:1'],
             'contextoForm.sec_id' => ['nullable', 'integer', 'min:1'],
@@ -618,6 +633,7 @@ new class extends Component
             'car_id' => '',
             'sed_id' => '',
             'ple_id' => '',
+            'periodo_evaluacion_id' => '',
             'mi2_id' => '',
             'tur_id' => '',
             'sec_id' => '',
@@ -969,7 +985,21 @@ new class extends Component
                     @enderror
                 </label>
 
-                {{-- 5. Turno → filtered by all above --}}
+                {{-- 5. Periodo de evaluación --}}
+                <label class="form-control w-full">
+                    <span class="label-text text-sm font-medium">Período de evaluación</span>
+                    <select wire:model.live="contextoForm.periodo_evaluacion_id" class="select select-bordered w-full">
+                        <option value="">— Sin período asignado —</option>
+                        @foreach ($this->catPeriodosEvaluacion as $id => $nombre)
+                            <option value="{{ $id }}">{{ $nombre }}</option>
+                        @endforeach
+                    </select>
+                    @error('contextoForm.periodo_evaluacion_id')
+                        <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
+                    @enderror
+                </label>
+
+                {{-- 6. Turno → filtered by all above --}}
                 <label class="form-control w-full">
                     <span class="label-text text-sm font-medium">Turno</span>
                     <select

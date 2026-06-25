@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['docente_id', 'car_id', 'sed_id', 'ple_id', 'mi2_id', 'tur_id', 'sec_id', 'activo'])]
+#[Fillable(['docente_id', 'car_id', 'sed_id', 'ple_id', 'periodo_evaluacion_id', 'mi2_id', 'tur_id', 'sec_id', 'activo'])]
 class DocenteContexto extends Model
 {
     use HasFactory;
@@ -15,6 +15,11 @@ class DocenteContexto extends Model
     public function docente(): BelongsTo
     {
         return $this->belongsTo(Docente::class);
+    }
+
+    public function periodoEvaluacion(): BelongsTo
+    {
+        return $this->belongsTo(PeriodoEvaluacion::class);
     }
 
     protected function casts(): array

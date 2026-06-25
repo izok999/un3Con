@@ -1,5 +1,6 @@
 import './bootstrap';
 import './particles';
+import './charts';
 
 // ── UNE Theme System ──────────────────────────────────────────────────
 

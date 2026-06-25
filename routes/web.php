@@ -59,7 +59,7 @@ Route::middleware(['auth', 'legacy.account.complete', 'oauth.documento', 'role:'
     Volt::route('/mis-carreras/{halId}', 'alumno.detalle-carrera')->name('alumno.carreras.show');
     Volt::route('/mis-materias', 'alumno.mis-materias')->name('alumno.materias');
     Volt::route('/evaluacion-docente', 'alumno.evaluacion-docente.index')->name('alumno.evaluacion-docente');
-    Volt::route('/evaluacion-docente/{docente}', 'alumno.evaluacion-docente.form')->name('alumno.evaluacion-docente.form');
+    Volt::route('/evaluacion-docente/{docente}/{contexto}', 'alumno.evaluacion-docente.form')->name('alumno.evaluacion-docente.form');
     Volt::route('/mis-deudas', 'alumno.mis-deudas')->name('alumno.deudas');
 });
 

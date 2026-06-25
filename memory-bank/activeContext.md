@@ -100,6 +100,16 @@ As of **June 2026**, the project is in active development with the following com
 - Materia dropdown shows `<select disabled>` with placeholder text when no sede + carrera selected, instead of raw numeric input
 - All 17 tests pass (9 management + 8 configuration/sync)
 
+### June 19, 2026 — Evaluation Context Model Refactoring + UI Polish
+- **Evaluation per materia (not per docente):** `DocentesElegiblesResolver::paraAlumno()` now returns pairs `['docente' => Docente, 'contexto' => DocenteContexto]` — a docente appears N times if they teach N subjects. Route changed to `/evaluacion-docente/{docente}/{contexto}`.
+- **`docente_contexto_id` FK in `evaluaciones_docentes`:** migration + fillable + relation. Uniqueness constraint expanded from `(periodo, formulario, docente, evaluador)` to include `docente_contexto_id` — same evaluator can evaluate the same docente in different subjects.
+- **Strict matching for `mi2_id`:** `contextValueMatchesStrict()` rejects NULL as wildcard for materia. Only students enrolled in that subject can evaluate. `ple_id` (periodo lectivo) uses flexible matching (NULL = comodín) — period is determined by `PeriodoEvaluacion`, not by `DocenteContexto`.
+- **`periodo_evaluacion_id` in `docente_contextos`:** new FK linking contexts to evaluation periods. Admin can select which evaluation period a context belongs to in the manual form (select dropdown with all `PeriodoEvaluacion` entries).
+- **Skeleton loading:** `docentes.blade.php` and `resultados.blade.php` now use `$ready` flag + `wire:init` pattern with full skeleton UI while data loads.
+- **Chart.js integration:** Distribution bar chart (1-5), participation donut (by carrera), top-5 horizontal bar. Scoped by unidad académica. Via `window.uneCharts` helpers in `resources/js/charts.js`.
+- **Logo:** `public/images/logo.png` added to guest login, app sidebar, and dashboard welcome card.
+- **Context form:** Manual context assignment now has 7 fields including `periodo_evaluacion_id` select.
+
 ### Previous activity (May–June 2026)
 - Teacher evaluation module (admin + student flows)
 - Livewire/Volt components for admin panels

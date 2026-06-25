@@ -5,6 +5,7 @@ namespace Tests\Feature\Admin;
 use App\Models\AcademicUnit;
 use App\Models\Docente;
 use App\Models\DocenteContexto;
+use App\Models\PeriodoEvaluacion;
 use App\Models\User;
 use App\Models\UserAcademicUnitScope;
 use App\Services\AlumnoExternoService;
@@ -85,6 +86,7 @@ class AdminEvaluacionDocenteManagementTest extends TestCase
         $this->actingAs($admin);
 
         Volt::test('admin.evaluacion-docente.docentes')
+            ->call('inicializarComponente')
             ->set('docenteForm.nombre', 'Grace Hopper')
             ->set('docenteForm.documento', '2222222')
             ->set('docenteForm.docente_externo_id', '9101')
@@ -137,6 +139,48 @@ class AdminEvaluacionDocenteManagementTest extends TestCase
             'tur_id' => 2,
             'sec_id' => 4,
             'activo' => true,
+        ]);
+    }
+
+    public function test_admin_can_add_a_context_with_periodo_evaluacion(): void
+    {
+        $admin = $this->adminUser();
+
+        $periodo = PeriodoEvaluacion::query()->create([
+            'nombre' => 'Evaluación 2026-1',
+            'fecha_inicio' => '2026-06-01',
+            'fecha_fin' => '2026-06-30',
+            'activo' => true,
+        ]);
+
+        $docente = Docente::query()->create([
+            'nombre' => 'Alan Turing',
+            'documento' => '7777777',
+            'docente_externo_id' => 9106,
+            'activo' => true,
+        ]);
+
+        $this->actingAs($admin);
+
+        Volt::test('admin.evaluacion-docente.docente-contextos', [
+            'selectedDocenteId' => $docente->id,
+            'allowedSedeIds' => [],
+        ])
+            ->set('contextoForm.sed_id', '8')
+            ->set('contextoForm.car_id', '14')
+            ->set('contextoForm.mi2_id', '301')
+            ->set('contextoForm.ple_id', '2026')
+            ->set('contextoForm.periodo_evaluacion_id', (string) $periodo->id)
+            ->set('contextoForm.tur_id', '2')
+            ->call('saveContexto')
+            ->assertHasNoErrors()
+            ->assertSee('Alan Turing');
+
+        $this->assertDatabaseHas('docente_contextos', [
+            'docente_id' => $docente->id,
+            'car_id' => 14,
+            'sed_id' => 8,
+            'periodo_evaluacion_id' => $periodo->id,
         ]);
     }
 

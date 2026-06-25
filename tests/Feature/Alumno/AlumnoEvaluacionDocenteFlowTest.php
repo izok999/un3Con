@@ -26,7 +26,7 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
     use RefreshDatabase;
 
     /**
-     * @return array{0: PeriodoEvaluacion, 1: FormularioEvaluacion, 2: Docente, 3: User}
+     * @return array{0: PeriodoEvaluacion, 1: FormularioEvaluacion, 2: DocenteContexto, 3: Docente, 4: User}
      */
     protected function setUpScenario(): array
     {
@@ -50,11 +50,22 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
             'activo' => true,
         ]);
 
+        $contexto = DocenteContexto::query()->create([
+            'docente_id' => $docente->id,
+            'car_id' => 14,
+            'sed_id' => 8,
+            'ple_id' => 2026,
+            'mi2_id' => 301,
+            'tur_id' => 2,
+            'sec_id' => 4,
+            'activo' => true,
+        ]);
+
         $evaluador = User::factory()->create([
             'documento' => '5413971',
         ]);
 
-        return [$periodo, $formulario, $docente, $evaluador];
+        return [$periodo, $formulario, $contexto, $docente, $evaluador];
     }
 
     protected function mockAlumnoContext(User $user): void
@@ -80,13 +91,16 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
         $service->shouldReceive('resolverAlumno')->andReturn($alumno);
         $service->shouldReceive('carreras')->andReturn(new Collection([$carrera]));
         $service->shouldReceive('materiasInscriptas')->andReturn(new Collection([$materia]));
+        $service->shouldReceive('catCarreras')->andReturn([14 => 'Ingeniería Informática']);
+        $service->shouldReceive('catTurnos')->andReturn([2 => 'Tarde']);
+        $service->shouldReceive('catMateriasPorIds')->andReturn([301 => 'Algoritmos']);
 
         $this->app->instance(AlumnoExternoService::class, $service);
     }
 
     public function test_guarda_cabecera_y_detalle_calculando_puntaje_ponderado(): void
     {
-        [$periodo, $formulario, $docente, $evaluador] = $this->setUpScenario();
+        [$periodo, $formulario, $contexto, $docente, $evaluador] = $this->setUpScenario();
         $criterios = $formulario->criterios()->get()->keyBy('orden');
 
         $evaluacion = app(GuardarEvaluacionDocente::class)->guardar(
@@ -105,6 +119,7 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
                 ['formulario_criterio_id' => $criterios[7]->id, 'valor_texto' => 'Excelente comunicación con el grupo.'],
             ],
             ['hal_id' => 77291, 'car_id' => 14],
+            $contexto,
         );
 
         $this->assertModelExists($evaluacion);
@@ -113,15 +128,16 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
         $this->assertSame('Ada Lovelace', $evaluacion->docente_nombre_snapshot);
         $this->assertSame('1234567', $evaluacion->docente_documento_snapshot);
         $this->assertSame(['hal_id' => 77291, 'car_id' => 14], $evaluacion->contexto_snapshot);
+        $this->assertEquals($contexto->id, $evaluacion->docente_contexto_id);
         $this->assertCount(7, $evaluacion->respuestas);
 
         $this->assertDatabaseCount('evaluaciones_docentes', 1);
         $this->assertDatabaseCount('evaluacion_respuestas', 7);
     }
 
-    public function test_no_permita_duplicar_una_evaluacion_del_mismo_docente_en_el_mismo_periodo_y_formulario(): void
+    public function test_no_permita_duplicar_una_evaluacion_del_mismo_contexto_en_el_mismo_periodo(): void
     {
-        [$periodo, $formulario, $docente, $evaluador] = $this->setUpScenario();
+        [$periodo, $formulario, $contexto, $docente, $evaluador] = $this->setUpScenario();
         $criterios = $formulario->criterios()->get()->keyBy('orden');
         $service = app(GuardarEvaluacionDocente::class);
 
@@ -134,10 +150,12 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
             ['formulario_criterio_id' => $criterios[6]->id, 'valor_numerico' => 5],
         ];
 
-        $service->guardar($periodo, $formulario, $docente, $evaluador, FormularioEvaluacion::TIPO_ALUMNO, $payload);
+        // Same docente, same contexto — should fail
+        $service->guardar($periodo, $formulario, $docente, $evaluador, FormularioEvaluacion::TIPO_ALUMNO, $payload, [], $contexto);
 
         try {
-            $service->guardar($periodo, $formulario, $docente, $evaluador, FormularioEvaluacion::TIPO_ALUMNO, $payload);
+            // Second call with same contexto — should trigger duplicate
+            $service->guardar($periodo, $formulario, $docente, $evaluador, FormularioEvaluacion::TIPO_ALUMNO, $payload, [], $contexto);
 
             $this->fail('Se esperaba una ValidationException por duplicado.');
         } catch (ValidationException $exception) {
@@ -145,9 +163,48 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
         }
     }
 
+    public function test_permita_evaluar_al_mismo_docente_en_distintos_contextos(): void
+    {
+        [$periodo, $formulario, $contexto1, $docente, $evaluador] = $this->setUpScenario();
+
+        // Create a second contexto (different matter) for the same docente
+        $contexto2 = DocenteContexto::query()->create([
+            'docente_id' => $docente->id,
+            'car_id' => 14,
+            'sed_id' => 8,
+            'ple_id' => 2026,
+            'mi2_id' => 302,
+            'tur_id' => 1,
+            'sec_id' => 4,
+            'activo' => true,
+        ]);
+
+        $criterios = $formulario->criterios()->get()->keyBy('orden');
+        $payload = [
+            ['formulario_criterio_id' => $criterios[1]->id, 'valor_numerico' => 5],
+            ['formulario_criterio_id' => $criterios[2]->id, 'valor_numerico' => 5],
+            ['formulario_criterio_id' => $criterios[3]->id, 'valor_numerico' => 5],
+            ['formulario_criterio_id' => $criterios[4]->id, 'valor_numerico' => 5],
+            ['formulario_criterio_id' => $criterios[5]->id, 'valor_numerico' => 5],
+            ['formulario_criterio_id' => $criterios[6]->id, 'valor_numerico' => 5],
+        ];
+
+        $service = app(GuardarEvaluacionDocente::class);
+
+        // First contexto — should work
+        $service->guardar($periodo, $formulario, $docente, $evaluador, FormularioEvaluacion::TIPO_ALUMNO, $payload, [], $contexto1);
+        $this->assertDatabaseCount('evaluaciones_docentes', 1);
+        $this->assertDatabaseHas('evaluaciones_docentes', ['docente_contexto_id' => $contexto1->id]);
+
+        // Second contexto — different materia, should also work
+        $service->guardar($periodo, $formulario, $docente, $evaluador, FormularioEvaluacion::TIPO_ALUMNO, $payload, [], $contexto2);
+        $this->assertDatabaseCount('evaluaciones_docentes', 2);
+        $this->assertDatabaseHas('evaluaciones_docentes', ['docente_contexto_id' => $contexto2->id]);
+    }
+
     public function test_no_permita_enviar_criterios_obligatorios_incompletos(): void
     {
-        [$periodo, $formulario, $docente, $evaluador] = $this->setUpScenario();
+        [$periodo, $formulario, , $docente, $evaluador] = $this->setUpScenario();
         $criterios = $formulario->criterios()->get()->keyBy('orden');
 
         try {
@@ -174,7 +231,7 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
 
     public function test_no_permita_usar_un_formulario_de_funcionario_con_tipo_alumno(): void
     {
-        [$periodo, , $docente, $evaluador] = $this->setUpScenario();
+        [$periodo, , , $docente, $evaluador] = $this->setUpScenario();
 
         $formulario = FormularioEvaluacion::query()
             ->where('tipo_evaluador', FormularioEvaluacion::TIPO_FUNCIONARIO)
@@ -205,7 +262,7 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
         }
     }
 
-    public function test_alumno_ve_solo_los_docentes_elegibles_en_la_pantalla_de_evaluacion(): void
+    public function test_alumno_ve_solo_los_docentes_elegibles_por_materia_en_la_pantalla_de_evaluacion(): void
     {
         $this->seed(FormularioEvaluacionSeeder::class);
 
@@ -252,6 +309,7 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
         DocenteContexto::query()->create([
             'docente_id' => $docenteNoElegible->id,
             'car_id' => 99,
+            'mi2_id' => null,
             'activo' => true,
         ]);
 
@@ -263,11 +321,10 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
             ->assertSeeText('Evaluación Docente')
             ->call('cargarDocentes')
             ->assertSeeText('Grace Hopper')
-            ->assertDontSeeText('Barbara Liskov')
-            ->assertSee(route('alumno.evaluacion-docente.form', $docenteElegible), false);
+            ->assertDontSeeText('Barbara Liskov');
     }
 
-    public function test_alumno_puede_abrir_el_formulario_de_un_docente_habilitado(): void
+    public function test_alumno_puede_abrir_el_formulario_de_un_docente_habilitado_por_materia(): void
     {
         $this->seed(FormularioEvaluacionSeeder::class);
 
@@ -293,7 +350,7 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
             'activo' => true,
         ]);
 
-        DocenteContexto::query()->create([
+        $contexto = DocenteContexto::query()->create([
             'docente_id' => $docente->id,
             'car_id' => 14,
             'sed_id' => 8,
@@ -307,12 +364,41 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
         $this->mockAlumnoContext($user);
 
         $this->actingAs($user)
-            ->get(route('alumno.evaluacion-docente.form', $docente))
+            ->get(route('alumno.evaluacion-docente.form', [$docente, $contexto]))
             ->assertOk()
             ->assertSeeText('Formulario de evaluación')
             ->assertSeeText('Katherine Johnson')
             ->assertSeeText('Explica los contenidos con claridad.')
             ->assertSeeText('Enviar evaluación');
+    }
+
+    public function test_no_permita_acceder_al_formulario_con_contexto_de_otro_docente(): void
+    {
+        $this->seed(FormularioEvaluacionSeeder::class);
+
+        /** @var User $user */
+        $user = User::factory()->create(['documento' => '5413971']);
+        Role::findOrCreate('ALUMNO', 'web');
+        $user->assignRole('ALUMNO');
+
+        PeriodoEvaluacion::query()->create([
+            'nombre' => 'Periodo Lectivo 2026',
+            'fecha_inicio' => '2026-02-01',
+            'fecha_fin' => '2026-11-30',
+            'activo' => true,
+        ]);
+
+        $docente1 = Docente::query()->create(['nombre' => 'A', 'activo' => true, 'documento' => '111']);
+        $contextoDeOtroDocente = DocenteContexto::query()->create([
+            'docente_id' => $docente1->id,
+            'car_id' => 14, 'mi2_id' => 301, 'activo' => true,
+        ]);
+
+        $docente2 = Docente::query()->create(['nombre' => 'B', 'activo' => true, 'documento' => '222']);
+
+        $this->actingAs($user)
+            ->get(route('alumno.evaluacion-docente.form', [$docente2, $contextoDeOtroDocente]))
+            ->assertStatus(403);
     }
 
     public function test_no_permita_evaluar_fuera_del_rango_de_fechas_del_periodo(): void
@@ -378,6 +464,7 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
         Schema::disableForeignKeyConstraints();
         Schema::drop('evaluacion_respuestas');
         Schema::drop('evaluaciones_docentes');
+        Schema::drop('docente_contextos');
         Schema::drop('periodos_evaluacion');
         Schema::enableForeignKeyConstraints();
 

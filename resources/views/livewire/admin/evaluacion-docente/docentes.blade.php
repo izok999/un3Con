@@ -38,6 +38,15 @@ new #[Layout('layouts.app')] class extends Component
 
     public bool $isGeneralAdmin = false;
 
+    public bool $ready = false;
+
+    /** @var array{total: int, activos: int, contextos: int} */
+    public array $stats = [
+        'total' => 0,
+        'activos' => 0,
+        'contextos' => 0,
+    ];
+
     public function boot(): void
     {
         $this->docentes = collect();
@@ -56,12 +65,19 @@ new #[Layout('layouts.app')] class extends Component
 
         if (! $this->schemaReady) {
             $this->schemaMessage = 'Las tablas locales de evaluación docente todavía no están disponibles. Ejecutá las migraciones del módulo para administrar docentes y contextos.';
+        }
+    }
 
+    public function inicializarComponente(): void
+    {
+        if (! $this->schemaReady) {
             return;
         }
 
         $this->loadCatalogs();
         $this->loadDocentes();
+        $this->cargarStats();
+        $this->ready = true;
     }
 
     public function deleteDocente(int $docenteId): void
@@ -80,6 +96,7 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         $this->loadDocentes();
+        $this->cargarStats();
 
         $message = $evaluacionesCount > 0
             ? "Docente eliminado. Se preservan {$evaluacionesCount} evaluaciones históricas."
@@ -90,7 +107,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public function updatedSearch(): void
     {
-        if (! $this->schemaReady) {
+        if (! $this->schemaReady || ! $this->ready) {
             return;
         }
 
@@ -143,6 +160,7 @@ new #[Layout('layouts.app')] class extends Component
         $this->selectedDocenteId = $docente->id;
         $this->fillDocenteForm($docente);
         $this->loadDocentes();
+        $this->cargarStats();
         $this->resetValidation();
         $this->dispatch('docente-saved');
 
@@ -152,6 +170,7 @@ new #[Layout('layouts.app')] class extends Component
     public function refreshDocentes(): void
     {
         $this->loadDocentes();
+        $this->cargarStats();
     }
 
     protected function schemaIsReady(): bool
@@ -219,6 +238,31 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         $this->docentes = $query->get();
+    }
+
+    protected function cargarStats(): void
+    {
+        $totalQuery = Docente::query();
+        $activosQuery = Docente::query()->where('activo', true);
+        $contextosQuery = \App\Models\DocenteContexto::query();
+
+        if ($this->isScopedAcademicAdmin()) {
+            $scopeClosure = function ($builder): void {
+                $builder
+                    ->doesntHave('contextos')
+                    ->orWhereHas('contextos', fn ($contextosQuery) => $contextosQuery->whereIn('sed_id', $this->allowedSedeIds));
+            };
+
+            $totalQuery->where($scopeClosure);
+            $activosQuery->where($scopeClosure);
+            $contextosQuery->whereIn('sed_id', $this->allowedSedeIds);
+        }
+
+        $this->stats = [
+            'total' => $totalQuery->count(),
+            'activos' => $activosQuery->count(),
+            'contextos' => $contextosQuery->count(),
+        ];
     }
 
     protected function docenteRules(): array
@@ -339,7 +383,6 @@ new #[Layout('layouts.app')] class extends Component
         },
 
         init() {
-            // Watch for docente-saved event to keep form in sync
             this.$watch('editingDocenteId', (val) => {
                 if (val && !this.minDocenteForm) {
                     this.minDocenteForm = true;
@@ -352,6 +395,7 @@ new #[Layout('layouts.app')] class extends Component
         editingDocenteId = $wire.get('editingDocenteId');
     "
     @contextos-updated.window="$wire.refreshDocentes()"
+    wire:init="inicializarComponente"
 >
     <x-slot name="header">Docentes para Evaluación</x-slot>
 
@@ -363,12 +407,149 @@ new #[Layout('layouts.app')] class extends Component
 
     @if (! $schemaReady)
         <x-mary-alert title="{{ $schemaMessage }}" icon="o-exclamation-triangle" class="alert-warning" />
+    @elseif (! $ready)
+        {{-- ===== SKELETAL LOADING ===== --}}
+        <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <article class="glass-card card">
+                <div class="card-body gap-3">
+                    <div class="skeleton h-3 w-20 rounded-lg"></div>
+                    <div class="skeleton h-9 w-16 rounded-xl"></div>
+                    <div class="skeleton h-3 w-32 rounded-lg"></div>
+                </div>
+            </article>
+            <article class="glass-card card">
+                <div class="card-body gap-3">
+                    <div class="skeleton h-3 w-16 rounded-lg"></div>
+                    <div class="skeleton h-9 w-16 rounded-xl"></div>
+                    <div class="skeleton h-3 w-40 rounded-lg"></div>
+                </div>
+            </article>
+            <article class="glass-card card md:col-span-2 xl:col-span-2">
+                <div class="card-body gap-3">
+                    <div class="skeleton h-3 w-20 rounded-lg"></div>
+                    <div class="skeleton h-9 w-16 rounded-xl"></div>
+                    <div class="skeleton h-3 w-56 rounded-lg"></div>
+                </div>
+            </article>
+        </section>
+
+        <section class="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+            {{-- Teacher Form Skeleton --}}
+            <article class="glass-card card">
+                <div class="card-body gap-4">
+                    <div class="space-y-2">
+                        <div class="skeleton h-3 w-16 rounded-lg"></div>
+                        <div class="skeleton h-6 w-40 rounded-lg"></div>
+                    </div>
+                    <div class="space-y-4">
+                        <div class="space-y-1.5">
+                            <div class="skeleton h-3 w-28 rounded-lg"></div>
+                            <div class="skeleton h-12 w-full rounded-2xl"></div>
+                        </div>
+                        <div class="grid gap-4 md:grid-cols-2">
+                            <div class="space-y-1.5">
+                                <div class="skeleton h-3 w-20 rounded-lg"></div>
+                                <div class="skeleton h-12 w-full rounded-2xl"></div>
+                            </div>
+                            <div class="space-y-1.5">
+                                <div class="skeleton h-3 w-20 rounded-lg"></div>
+                                <div class="skeleton h-12 w-full rounded-2xl"></div>
+                            </div>
+                        </div>
+                        <div class="skeleton h-14 w-full rounded-2xl"></div>
+                        <div class="flex justify-end">
+                            <div class="skeleton h-10 w-48 rounded-[1.15rem]"></div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            {{-- Context Panel Skeleton --}}
+            <article class="glass-card card">
+                <div class="card-body gap-4">
+                    <div class="space-y-2">
+                        <div class="skeleton h-3 w-24 rounded-lg"></div>
+                        <div class="skeleton h-6 w-44 rounded-lg"></div>
+                    </div>
+                    <div class="space-y-3">
+                        <div class="skeleton h-12 w-full rounded-2xl"></div>
+                        <div class="skeleton h-12 w-full rounded-2xl"></div>
+                        <div class="skeleton h-12 w-full rounded-2xl"></div>
+                        <div class="flex justify-end">
+                            <div class="skeleton h-10 w-36 rounded-[1.15rem]"></div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+        </section>
+
+        {{-- Teacher List Skeleton --}}
+        <section class="space-y-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div class="space-y-2">
+                    <div class="skeleton h-3 w-24 rounded-lg"></div>
+                    <div class="skeleton h-6 w-44 rounded-lg"></div>
+                </div>
+                <div class="space-y-1.5 w-full md:max-w-sm">
+                    <div class="skeleton h-3 w-12 rounded-lg"></div>
+                    <div class="skeleton h-12 w-full rounded-2xl"></div>
+                </div>
+            </div>
+
+            <div class="glass-card card overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr class="border-b border-base-300">
+                                <th class="w-8"></th>
+                                <th class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Docente</th>
+                                <th class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Documento</th>
+                                <th class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Carreras</th>
+                                <th class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50 text-center">Ctx</th>
+                                <th class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (range(1, 6) as $i)
+                                <tr class="border-b border-base-300/60">
+                                    <td class="w-8">
+                                        <div class="skeleton size-4 rounded"></div>
+                                    </td>
+                                    <td>
+                                        <div class="flex items-center gap-2">
+                                            <div class="skeleton h-4 w-36 rounded-lg"></div>
+                                            <div class="skeleton h-4 w-12 rounded-full"></div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="skeleton h-4 w-24 rounded-lg"></div>
+                                    </td>
+                                    <td>
+                                        <div class="flex gap-1">
+                                            <div class="skeleton h-4 w-16 rounded-full"></div>
+                                            <div class="skeleton h-4 w-20 rounded-full"></div>
+                                        </div>
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="skeleton h-5 w-8 rounded-full mx-auto"></div>
+                                    </td>
+                                    <td>
+                                        <div class="skeleton h-4 w-16 rounded-lg"></div>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
     @else
+        {{-- ===== REAL CONTENT ===== --}}
         <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <article class="glass-card card">
                 <div class="card-body gap-1">
                     <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Docentes</p>
-                    <p class="text-3xl font-semibold text-primary">{{ $docentes->count() }}</p>
+                    <p class="text-3xl font-semibold text-primary">{{ $stats['total'] }}</p>
                     <p class="text-sm text-base-content/65">Proyección local disponible</p>
                 </div>
             </article>
@@ -376,7 +557,7 @@ new #[Layout('layouts.app')] class extends Component
             <article class="glass-card card">
                 <div class="card-body gap-1">
                     <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Activos</p>
-                    <p class="text-3xl font-semibold text-secondary">{{ $docentes->where('activo', true)->count() }}</p>
+                    <p class="text-3xl font-semibold text-secondary">{{ $stats['activos'] }}</p>
                     <p class="text-sm text-base-content/65">Docentes visibles para elegibilidad</p>
                 </div>
             </article>
@@ -384,7 +565,7 @@ new #[Layout('layouts.app')] class extends Component
             <article class="glass-card card md:col-span-2 xl:col-span-2">
                 <div class="card-body gap-1">
                     <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Contextos</p>
-                    <p class="text-3xl font-semibold text-accent">{{ $docentes->sum('contextos_count') }}</p>
+                    <p class="text-3xl font-semibold text-accent">{{ $stats['contextos'] }}</p>
                     <p class="text-sm text-base-content/65">Coincidencias académicas cargadas para resolver elegibilidad</p>
                 </div>
             </article>

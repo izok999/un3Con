@@ -13,7 +13,10 @@ class DocentesElegiblesResolver
     public function __construct(public AlumnoExternoService $alumnoExternoService) {}
 
     /**
-     * @return Collection<int, Docente>
+     * Retorna pares (docente, contexto) para cada materia elegible.
+     * Un docente puede aparecer múltiples veces si tiene varias materias.
+     *
+     * @return Collection<int, array{docente: Docente, contexto: DocenteContexto}>
      */
     public function paraAlumno(User $user): Collection
     {
@@ -27,39 +30,15 @@ class DocentesElegiblesResolver
             ->where('activo', true)
             ->with(['contextos' => fn ($query) => $query->where('activo', true)])
             ->get()
-            ->filter(fn (Docente $docente): bool => $this->findMatchingContext($docente, $contextoAlumno) !== null)
-            ->sortBy('nombre')
+            ->flatMap(function (Docente $docente) use ($contextoAlumno): array {
+                return $docente->contextos
+                    ->filter(fn (DocenteContexto $ctx) => $this->matchesContext($ctx, $contextoAlumno))
+                    ->map(fn (DocenteContexto $ctx) => ['docente' => $docente, 'contexto' => $ctx])
+                    ->values()
+                    ->all();
+            })
+            ->sortBy('docente.nombre')
             ->values();
-    }
-
-    /**
-     * @return array<string, int>|null
-     */
-    public function contextoParaAlumno(User $user, Docente $docente): ?array
-    {
-        $contextoAlumno = $this->buildStudentContext($user);
-
-        if ($contextoAlumno === null) {
-            return null;
-        }
-
-        $matchingContext = $this->findMatchingContext(
-            $docente->loadMissing(['contextos' => fn ($query) => $query->where('activo', true)]),
-            $contextoAlumno,
-        );
-
-        if (! $matchingContext) {
-            return null;
-        }
-
-        return array_filter([
-            'car_id' => $matchingContext->car_id,
-            'sed_id' => $matchingContext->sed_id,
-            'ple_id' => $matchingContext->ple_id,
-            'mi2_id' => $matchingContext->mi2_id,
-            'tur_id' => $matchingContext->tur_id,
-            'sec_id' => $matchingContext->sec_id,
-        ], fn (mixed $value): bool => $value !== null);
     }
 
     /**
@@ -116,26 +95,38 @@ class DocentesElegiblesResolver
     /**
      * @param  array{car_ids: array<int, int>, sed_ids: array<int, int>, ple_ids: array<int, int>, mi2_ids: array<int, int>, tur_ids: array<int, int>, sec_ids: array<int, int>}  $contextoAlumno
      */
-    protected function findMatchingContext(Docente $docente, array $contextoAlumno): ?DocenteContexto
+    protected function matchesContext(DocenteContexto $contexto, array $contextoAlumno): bool
     {
-        /** @var Collection<int, DocenteContexto> $contextos */
-        $contextos = $docente->contextos;
-
-        return $contextos->first(function (DocenteContexto $contexto) use ($contextoAlumno): bool {
-            return $this->contextValueMatches($contexto->car_id, $contextoAlumno['car_ids'])
-                && $this->contextValueMatches($contexto->sed_id, $contextoAlumno['sed_ids'])
-                && $this->contextValueMatches($contexto->ple_id, $contextoAlumno['ple_ids'])
-                && $this->contextValueMatches($contexto->mi2_id, $contextoAlumno['mi2_ids'])
-                && $this->contextValueMatches($contexto->tur_id, $contextoAlumno['tur_ids'])
-                && $this->contextValueMatches($contexto->sec_id, $contextoAlumno['sec_ids']);
-        });
+        return $this->contextValueMatches($contexto->car_id, $contextoAlumno['car_ids'])
+            && $this->contextValueMatches($contexto->sed_id, $contextoAlumno['sed_ids'])
+            && $this->contextValueMatches($contexto->ple_id, $contextoAlumno['ple_ids'])
+            && $this->contextValueMatchesStrict($contexto->mi2_id, $contextoAlumno['mi2_ids'])
+            && $this->contextValueMatches($contexto->tur_id, $contextoAlumno['tur_ids'])
+            && $this->contextValueMatches($contexto->sec_id, $contextoAlumno['sec_ids']);
     }
 
     /**
+     * Comodín: NULL matchea cualquier valor del alumno.
+     *
      * @param  array<int, int>  $studentValues
      */
     protected function contextValueMatches(?int $contextValue, array $studentValues): bool
     {
         return $contextValue === null || in_array($contextValue, $studentValues, true);
+    }
+
+    /**
+     * Match estricto: requiere que el valor del docente exista explícitamente.
+     * No se permite NULL como comodín. Se usa para mi2_id (materia).
+     *
+     * @param  array<int, int>  $studentValues
+     */
+    protected function contextValueMatchesStrict(?int $contextValue, array $studentValues): bool
+    {
+        if ($contextValue === null) {
+            return false;
+        }
+
+        return in_array($contextValue, $studentValues, true);
     }
 }
