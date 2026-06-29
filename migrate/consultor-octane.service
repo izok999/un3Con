@@ -1,0 +1,60 @@
+# =============================================================================
+# consultor-octane.service — Octane (FrankenPHP) como servicio de systemd
+# Copiar a: /etc/systemd/system/consultor-octane.service
+# Aplicar:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable consultor-octane
+#   sudo systemctl start consultor-octane
+# Ver logs:
+#   sudo journalctl -u consultor-octane -f
+# =============================================================================
+
+[Unit]
+Description=Laravel Octane (FrankenPHP) — Consultor
+After=network.target redis.service pgbouncer.service postgresql.service
+Wants=redis.service pgbouncer.service
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/consultor
+
+# Octane en localhost:8000 — Nginx hace el proxy hacia acá
+ExecStart=php8.4 /var/www/consultor/artisan octane:start \
+    --server=frankenphp \
+    --host=127.0.0.1 \
+    --port=8000 \
+    --workers=auto \
+    --max-requests=500 \
+    --task-workers=auto
+
+# Reload graceful (sin matar conexiones activas)
+# Usado por deploy.sh vía: sudo systemctl reload consultor-octane
+ExecReload=/bin/kill -USR1 $MAINPID
+
+# Al detener, esperar que los workers terminen sus requests actuales
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Reinicio automático con backoff
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+# Seguridad básica
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Variables de entorno cargadas desde el .env de la app
+# (Laravel las lee solo, esto es por si necesitás inyectar algo a nivel sistema)
+EnvironmentFile=-/var/www/consultor/.env.systemd
+
+# Logs van a journald (ver con journalctl -u consultor-octane)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=consultor-octane
+
+[Install]
+WantedBy=multi-user.target

@@ -88,7 +88,7 @@ return [
             'driver' => 'pgsql',
             'url' => env('DB_URL'),
             'host' => env('DB_HOST', '127.0.0.1'),
-            'port' => env('DB_PORT', '5432'),
+            'port' => env('DB_PORT', '6432'),
             'database' => env('DB_DATABASE', 'laravel'),
             'username' => env('DB_USERNAME', 'root'),
             'password' => env('DB_PASSWORD', ''),
@@ -97,6 +97,12 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+
+            // PgBouncer en pool_mode=transaction no soporta prepared statements con nombre.
+            // Sin esto, Eloquent falla con: "ERROR: prepared statement 's0' already exists"
+            'options' => [
+                PDO::ATTR_EMULATE_PREPARES => true,
+            ],
         ],
 
         'pgsql_externa' => [
@@ -112,9 +118,7 @@ return [
             'prefix_indexes' => true,
             'search_path' => env('DB_EXTERNA_SEARCH_PATH', 'sh_movimientos,sh_maestros,public'),
             'sslmode' => env('DB_EXTERNA_SSLMODE', 'prefer'),
-            'options' => [
-                PDO::ATTR_PERSISTENT => true,
-            ],
+            'connect_timeout' => 5,
         ],
 
         'sqlsrv' => [
