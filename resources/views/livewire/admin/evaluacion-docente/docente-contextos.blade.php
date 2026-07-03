@@ -60,6 +60,15 @@ new class extends Component
 
     public bool $schemaReady = true;
 
+    /**
+     * Marca qué campos en cascada no pudieron consultar la BD externa en el
+     * último render, para avisar al operador en vez de mostrarle un catálogo
+     * sin filtrar como si fuera el resultado válido para la selección actual.
+     *
+     * @var array<string, bool>
+     */
+    public array $externalCatalogErrors = [];
+
     public function mount(?int $selectedDocenteId = null, array $allowedSedeIds = []): void
     {
         $this->selectedDocenteId = $selectedDocenteId;
@@ -506,11 +515,10 @@ new class extends Component
             return $this->catCarreras;
         }
 
-        try {
-            return app(AlumnoExternoService::class)->catCarrerasPorSede($sedId);
-        } catch (\Throwable) {
-            return $this->catCarreras;
-        }
+        return $this->fetchScopedCatalog(
+            'car_id',
+            fn () => app(AlumnoExternoService::class)->catCarrerasPorSede($sedId),
+        );
     }
 
     /**
@@ -528,11 +536,10 @@ new class extends Component
             return $this->catMaterias;
         }
 
-        try {
-            return app(AlumnoExternoService::class)->catMateriasPorCarreraYSede($carId, $sedId);
-        } catch (\Throwable) {
-            return $this->catMaterias;
-        }
+        return $this->fetchScopedCatalog(
+            'mi2_id',
+            fn () => app(AlumnoExternoService::class)->catMateriasPorCarreraYSede($carId, $sedId),
+        );
     }
 
     /**
@@ -551,11 +558,10 @@ new class extends Component
             return $this->catPeriodos;
         }
 
-        try {
-            return app(AlumnoExternoService::class)->catPeriodosPorCarreraYSede($carId, $sedId, $mi2Id);
-        } catch (\Throwable) {
-            return $this->catPeriodos;
-        }
+        return $this->fetchScopedCatalog(
+            'ple_id',
+            fn () => app(AlumnoExternoService::class)->catPeriodosPorCarreraYSede($carId, $sedId, $mi2Id),
+        );
     }
 
     /**
@@ -575,11 +581,10 @@ new class extends Component
             return $this->catTurnos;
         }
 
-        try {
-            return app(AlumnoExternoService::class)->catTurnosPorCarreraYSede($carId, $sedId, $mi2Id, $pleId);
-        } catch (\Throwable) {
-            return $this->catTurnos;
-        }
+        return $this->fetchScopedCatalog(
+            'tur_id',
+            fn () => app(AlumnoExternoService::class)->catTurnosPorCarreraYSede($carId, $sedId, $mi2Id, $pleId),
+        );
     }
 
     /**
@@ -600,10 +605,33 @@ new class extends Component
             return $this->catSecciones;
         }
 
+        return $this->fetchScopedCatalog(
+            'sec_id',
+            fn () => app(AlumnoExternoService::class)->catSeccionesPorCarreraYSede($carId, $sedId, $mi2Id, $pleId, $turId),
+        );
+    }
+
+    /**
+     * Ejecuta una consulta de catálogo filtrado (sede/carrera/etc.) y, si la
+     * BD externa falla, devuelve una lista vacía en vez del catálogo global
+     * sin filtrar — mostrar el catálogo sin filtrar como si fuera el
+     * resultado válido para la selección actual dejaría elegir combinaciones
+     * que no existen. `$externalCatalogErrors` permite avisarlo en la vista.
+     *
+     * @param  callable(): array<int, string>  $query
+     * @return array<int, string>
+     */
+    protected function fetchScopedCatalog(string $field, callable $query): array
+    {
         try {
-            return app(AlumnoExternoService::class)->catSeccionesPorCarreraYSede($carId, $sedId, $mi2Id, $pleId, $turId);
+            $result = $query();
+            unset($this->externalCatalogErrors[$field]);
+
+            return $result;
         } catch (\Throwable) {
-            return $this->catSecciones;
+            $this->externalCatalogErrors[$field] = true;
+
+            return [];
         }
     }
 
@@ -639,12 +667,14 @@ new class extends Component
             'sec_id' => '',
             'activo' => true,
         ];
+        $this->externalCatalogErrors = [];
     }
 
     protected function resetContextoFormCascade(string ...$fields): void
     {
         foreach ($fields as $field) {
             $this->contextoForm[$field] = '';
+            unset($this->externalCatalogErrors[$field]);
         }
     }
 
@@ -884,6 +914,16 @@ new class extends Component
             <p class="text-sm font-medium text-base-content/65 px-1 py-1">Agregar contexto manualmente</p>
         </div>
 
+        {{-- Screen-reader announcements for cascade loading — kept as one stable live region so
+             assistive tech reliably picks up the text change instead of missing separate regions. --}}
+        <div aria-live="polite" role="status" class="sr-only">
+            <span wire:loading wire:target="contextoForm.sed_id">Actualizando carreras disponibles…</span>
+            <span wire:loading wire:target="contextoForm.sed_id, contextoForm.car_id">Actualizando materias disponibles…</span>
+            <span wire:loading wire:target="contextoForm.sed_id, contextoForm.car_id, contextoForm.mi2_id">Actualizando períodos disponibles…</span>
+            <span wire:loading wire:target="contextoForm.sed_id, contextoForm.car_id, contextoForm.mi2_id, contextoForm.ple_id">Actualizando turnos disponibles…</span>
+            <span wire:loading wire:target="contextoForm.sed_id, contextoForm.car_id, contextoForm.mi2_id, contextoForm.ple_id, contextoForm.tur_id">Actualizando secciones disponibles…</span>
+        </div>
+
         <form wire:submit="saveContexto" class="space-y-4">
             <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {{-- 1. Sede (root of cascade) --}}
@@ -912,16 +952,26 @@ new class extends Component
 
                 {{-- 2. Carrera → filtered by sede --}}
                 <label class="form-control w-full">
-                    <span class="label-text text-sm font-medium">Carrera</span>
+                    <span class="label-text text-sm font-medium inline-flex items-center gap-2">
+                        Carrera
+                        <span
+                            wire:loading
+                            wire:target="contextoForm.sed_id"
+                            class="loading loading-spinner loading-xs text-primary"
+                            aria-hidden="true"
+                        ></span>
+                    </span>
                     <select
                         wire:model.live="contextoForm.car_id"
+                        wire:loading.attr="disabled"
+                        wire:target="contextoForm.sed_id"
                         x-on:change="
                             $wire.contextoForm.mi2_id = '';
                             $wire.contextoForm.ple_id = '';
                             $wire.contextoForm.tur_id = '';
                             $wire.contextoForm.sec_id = '';
                         "
-                        class="select select-bordered w-full"
+                        class="select select-bordered w-full disabled:opacity-60"
                     >
                         <option value="">— Cualquier carrera —</option>
                         @foreach ($this->formCarreras as $id => $nombre)
@@ -931,20 +981,33 @@ new class extends Component
                     @error('contextoForm.car_id')
                         <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
                     @enderror
+                    @if ($this->externalCatalogErrors['car_id'] ?? false)
+                        <span class="mt-1 text-xs font-medium text-warning">No se pudo consultar el catálogo externo de carreras para esta sede. Reintentá cambiando la sede.</span>
+                    @endif
                 </label>
 
                 {{-- 3. Materia → filtered by sede + carrera --}}
                 <label class="form-control w-full">
-                    <span class="label-text text-sm font-medium">Materia</span>
+                    <span class="label-text text-sm font-medium inline-flex items-center gap-2">
+                        Materia
+                        <span
+                            wire:loading
+                            wire:target="contextoForm.sed_id, contextoForm.car_id"
+                            class="loading loading-spinner loading-xs text-primary"
+                            aria-hidden="true"
+                        ></span>
+                    </span>
                     @if (! empty($this->formMaterias))
                         <select
                             wire:model.live="contextoForm.mi2_id"
+                            wire:loading.attr="disabled"
+                            wire:target="contextoForm.sed_id, contextoForm.car_id"
                             x-on:change="
                                 $wire.contextoForm.ple_id = '';
                                 $wire.contextoForm.tur_id = '';
                                 $wire.contextoForm.sec_id = '';
                             "
-                            class="select select-bordered w-full"
+                            class="select select-bordered w-full disabled:opacity-60"
                         >
                             <option value="">— Cualquier materia —</option>
                             @foreach ($this->formMaterias as $id => $nombre)
@@ -952,8 +1015,23 @@ new class extends Component
                             @endforeach
                         </select>
                     @elseif ($contextoForm['sed_id'] && $contextoForm['car_id'])
-                        {{-- Sede + carrera seleccionados pero catálogo vacío (probablemente sin acceso a BD externa) --}}
-                        <input wire:model="contextoForm.mi2_id" type="number" min="1" class="input input-bordered w-full" placeholder="ID de materia" />
+                        {{-- Sede + carrera seleccionados pero catálogo vacío: puede ser que
+                             legítimamente no haya materias para esta combinación, o que la
+                             BD externa haya fallado (ver $externalCatalogErrors). --}}
+                        <input
+                            wire:model="contextoForm.mi2_id"
+                            wire:loading.attr="disabled"
+                            wire:target="contextoForm.sed_id, contextoForm.car_id"
+                            type="number"
+                            min="1"
+                            class="input input-bordered w-full disabled:opacity-60"
+                            placeholder="ID de materia"
+                        />
+                        @if ($this->externalCatalogErrors['mi2_id'] ?? false)
+                            <span class="mt-1 text-xs font-medium text-warning">No se pudo consultar el catálogo externo de materias. Reintentá o cargá el ID manualmente.</span>
+                        @else
+                            <span class="mt-1 text-xs text-base-content/55">No hay materias registradas para esta combinación. Podés cargar el ID manualmente si corresponde.</span>
+                        @endif
                     @else
                         <select class="select select-bordered w-full" disabled>
                             <option value="">Seleccioná sede y carrera primero</option>
@@ -966,14 +1044,24 @@ new class extends Component
 
                 {{-- 4. Período → filtered by sede + carrera + materia --}}
                 <label class="form-control w-full">
-                    <span class="label-text text-sm font-medium">Período lectivo</span>
+                    <span class="label-text text-sm font-medium inline-flex items-center gap-2">
+                        Período lectivo
+                        <span
+                            wire:loading
+                            wire:target="contextoForm.sed_id, contextoForm.car_id, contextoForm.mi2_id"
+                            class="loading loading-spinner loading-xs text-primary"
+                            aria-hidden="true"
+                        ></span>
+                    </span>
                     <select
                         wire:model.live="contextoForm.ple_id"
+                        wire:loading.attr="disabled"
+                        wire:target="contextoForm.sed_id, contextoForm.car_id, contextoForm.mi2_id"
                         x-on:change="
                             $wire.contextoForm.tur_id = '';
                             $wire.contextoForm.sec_id = '';
                         "
-                        class="select select-bordered w-full"
+                        class="select select-bordered w-full disabled:opacity-60"
                     >
                         <option value="">— Cualquier período —</option>
                         @foreach ($this->formPeriodos as $id => $nombre)
@@ -983,6 +1071,9 @@ new class extends Component
                     @error('contextoForm.ple_id')
                         <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
                     @enderror
+                    @if ($this->externalCatalogErrors['ple_id'] ?? false)
+                        <span class="mt-1 text-xs font-medium text-warning">No se pudo consultar el catálogo externo de períodos. Reintentá cambiando la selección anterior.</span>
+                    @endif
                 </label>
 
                 {{-- 5. Periodo de evaluación --}}
@@ -1001,11 +1092,21 @@ new class extends Component
 
                 {{-- 6. Turno → filtered by all above --}}
                 <label class="form-control w-full">
-                    <span class="label-text text-sm font-medium">Turno</span>
+                    <span class="label-text text-sm font-medium inline-flex items-center gap-2">
+                        Turno
+                        <span
+                            wire:loading
+                            wire:target="contextoForm.sed_id, contextoForm.car_id, contextoForm.mi2_id, contextoForm.ple_id"
+                            class="loading loading-spinner loading-xs text-primary"
+                            aria-hidden="true"
+                        ></span>
+                    </span>
                     <select
                         wire:model.live="contextoForm.tur_id"
+                        wire:loading.attr="disabled"
+                        wire:target="contextoForm.sed_id, contextoForm.car_id, contextoForm.mi2_id, contextoForm.ple_id"
                         x-on:change="$wire.contextoForm.sec_id = ''"
-                        class="select select-bordered w-full"
+                        class="select select-bordered w-full disabled:opacity-60"
                     >
                         <option value="">— Cualquier turno —</option>
                         @foreach ($this->formTurnos as $id => $nombre)
@@ -1015,12 +1116,28 @@ new class extends Component
                     @error('contextoForm.tur_id')
                         <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
                     @enderror
+                    @if ($this->externalCatalogErrors['tur_id'] ?? false)
+                        <span class="mt-1 text-xs font-medium text-warning">No se pudo consultar el catálogo externo de turnos. Reintentá cambiando la selección anterior.</span>
+                    @endif
                 </label>
 
                 {{-- 6. Sección → filtered by all above --}}
                 <label class="form-control w-full">
-                    <span class="label-text text-sm font-medium">Sección</span>
-                    <select wire:model.live="contextoForm.sec_id" class="select select-bordered w-full">
+                    <span class="label-text text-sm font-medium inline-flex items-center gap-2">
+                        Sección
+                        <span
+                            wire:loading
+                            wire:target="contextoForm.sed_id, contextoForm.car_id, contextoForm.mi2_id, contextoForm.ple_id, contextoForm.tur_id"
+                            class="loading loading-spinner loading-xs text-primary"
+                            aria-hidden="true"
+                        ></span>
+                    </span>
+                    <select
+                        wire:model.live="contextoForm.sec_id"
+                        wire:loading.attr="disabled"
+                        wire:target="contextoForm.sed_id, contextoForm.car_id, contextoForm.mi2_id, contextoForm.ple_id, contextoForm.tur_id"
+                        class="select select-bordered w-full disabled:opacity-60"
+                    >
                         <option value="">— Cualquier sección —</option>
                         @foreach ($this->formSecciones as $id => $nombre)
                             <option value="{{ $id }}">{{ $nombre }}</option>
@@ -1029,6 +1146,9 @@ new class extends Component
                     @error('contextoForm.sec_id')
                         <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
                     @enderror
+                    @if ($this->externalCatalogErrors['sec_id'] ?? false)
+                        <span class="mt-1 text-xs font-medium text-warning">No se pudo consultar el catálogo externo de secciones. Reintentá cambiando la selección anterior.</span>
+                    @endif
                 </label>
             </div>
 

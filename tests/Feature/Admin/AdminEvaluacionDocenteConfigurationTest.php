@@ -51,6 +51,7 @@ class AdminEvaluacionDocenteConfigurationTest extends TestCase
 
         Volt::test('admin.evaluacion-docente.configuracion')
             ->set('periodoForm.nombre', 'Periodo Lectivo 2026')
+            ->set('periodoForm.ple_codigo', '2026')
             ->set('periodoForm.fecha_inicio', '2026-02-01')
             ->set('periodoForm.fecha_fin', '2026-11-30')
             ->set('periodoForm.activo', true)
@@ -60,6 +61,7 @@ class AdminEvaluacionDocenteConfigurationTest extends TestCase
 
         $this->assertDatabaseHas('periodos_evaluacion', [
             'nombre' => 'Periodo Lectivo 2026',
+            'ple_codigo' => '2026',
             'activo' => true,
         ]);
 

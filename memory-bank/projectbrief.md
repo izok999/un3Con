@@ -38,6 +38,10 @@ CONSULTOR UNESYS is a student-facing academic portal and administrative manageme
    - Local PostgreSQL (users, roles, evaluations data)
    - External read-only legacy PostgreSQL (academic records, student data)
 
+6. **Multi-language Support** — UI available in Spanish, English, Portuguese, and Guaraní, with locale persisted per user
+
+7. **Institutional Documents (Normativas)** — Read-only page listing legal/institutional documents (statute, academic regulations, fee schedules)
+
 ## Project Scope Boundaries
 
 - **In scope:** Student academic queries, teacher evaluation, admin management, OAuth login, role-based access

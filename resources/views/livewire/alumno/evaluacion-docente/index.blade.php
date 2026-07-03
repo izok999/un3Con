@@ -95,7 +95,7 @@ new #[Layout('layouts.app')] class extends Component
 
         abort_unless($user, 403);
 
-        $this->docentes = $this->periodoActivo ? $resolver->paraAlumno($user) : collect();
+        $this->docentes = $this->periodoActivo ? $resolver->paraAlumno($user, $this->periodoActivo) : collect();
 
         // Check already evaluated per context
         $this->evaluadosEnPeriodoActivo = $this->periodoActivo

@@ -2,18 +2,21 @@
 
 use App\Enums\RoleName;
 use App\Models\Docente;
+use App\Models\DocenteContexto;
 use App\Models\User;
 use App\Services\AlumnoExternoService;
-use Illuminate\Support\Collection;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
+use Livewire\WithPagination;
 
 new #[Layout('layouts.app')] class extends Component
 {
-    public Collection $docentes;
+    use WithPagination;
 
     public string $search = '';
 
@@ -22,6 +25,9 @@ new #[Layout('layouts.app')] class extends Component
     public ?int $selectedDocenteId = null;
 
     public array $docenteForm = [];
+
+    /** Snapshot de docenteForm al entrar en edición/alta, para detectar cambios sin guardar. */
+    public array $originalDocenteForm = [];
 
     public bool $schemaReady = true;
 
@@ -47,11 +53,6 @@ new #[Layout('layouts.app')] class extends Component
         'contextos' => 0,
     ];
 
-    public function boot(): void
-    {
-        $this->docentes = collect();
-    }
-
     public function mount(): void
     {
         $this->resetDocenteForm();
@@ -75,7 +76,6 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         $this->loadCatalogs();
-        $this->loadDocentes();
         $this->cargarStats();
         $this->ready = true;
     }
@@ -95,7 +95,6 @@ new #[Layout('layouts.app')] class extends Component
             $this->resetDocenteForm();
         }
 
-        $this->loadDocentes();
         $this->cargarStats();
 
         $message = $evaluacionesCount > 0
@@ -111,7 +110,7 @@ new #[Layout('layouts.app')] class extends Component
             return;
         }
 
-        $this->loadDocentes();
+        $this->resetPage();
     }
 
     public function createNewDocente(): void
@@ -129,6 +128,11 @@ new #[Layout('layouts.app')] class extends Component
         $this->selectedDocenteId = $docente->id;
         $this->fillDocenteForm($docente);
         $this->resetValidation();
+    }
+
+    public function hasUnsavedChanges(): bool
+    {
+        return $this->docenteForm !== $this->originalDocenteForm;
     }
 
     public function saveDocente(): void
@@ -159,7 +163,6 @@ new #[Layout('layouts.app')] class extends Component
         $this->editingDocenteId = $docente->id;
         $this->selectedDocenteId = $docente->id;
         $this->fillDocenteForm($docente);
-        $this->loadDocentes();
         $this->cargarStats();
         $this->resetValidation();
         $this->dispatch('docente-saved');
@@ -169,7 +172,6 @@ new #[Layout('layouts.app')] class extends Component
 
     public function refreshDocentes(): void
     {
-        $this->loadDocentes();
         $this->cargarStats();
     }
 
@@ -189,12 +191,13 @@ new #[Layout('layouts.app')] class extends Component
             if ($this->isScopedAcademicAdmin()) {
                 $this->catSedes = array_intersect_key($this->catSedes, array_flip($this->allowedSedeIds));
             }
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Si la base externa no está disponible los catálogos quedan vacíos
         }
     }
 
-    protected function loadDocentes(): void
+    #[Computed]
+    public function docentes(): LengthAwarePaginator
     {
         $search = trim($this->search);
 
@@ -237,14 +240,14 @@ new #[Layout('layouts.app')] class extends Component
             });
         }
 
-        $this->docentes = $query->get();
+        return $query->paginate(10);
     }
 
     protected function cargarStats(): void
     {
         $totalQuery = Docente::query();
         $activosQuery = Docente::query()->where('activo', true);
-        $contextosQuery = \App\Models\DocenteContexto::query();
+        $contextosQuery = DocenteContexto::query();
 
         if ($this->isScopedAcademicAdmin()) {
             $scopeClosure = function ($builder): void {
@@ -293,6 +296,7 @@ new #[Layout('layouts.app')] class extends Component
             'docente_externo_id' => $docente->docente_externo_id !== null ? (string) $docente->docente_externo_id : '',
             'activo' => $docente->activo,
         ];
+        $this->originalDocenteForm = $this->docenteForm;
     }
 
     protected function resetDocenteForm(): void
@@ -305,6 +309,7 @@ new #[Layout('layouts.app')] class extends Component
             'docente_externo_id' => '',
             'activo' => true,
         ];
+        $this->originalDocenteForm = $this->docenteForm;
     }
 
     protected function normalizeNullableString(mixed $value): ?string
@@ -368,31 +373,65 @@ new #[Layout('layouts.app')] class extends Component
 <div
     class="space-y-6"
     x-data="{
-        expandedDocenteId: null,
         editingDocenteId: {{ Js::from($editingDocenteId) }},
-        minDocenteForm: false,
+        nombreDocenteEnEdicion: {{ Js::from($docenteForm['nombre'] ?? '') }},
+        resaltarEdicion: false,
+        panelVisible: true,
+        observadorPanel: null,
         deletingDocenteId: null,
         deletingDocenteNombre: '',
 
-        toggleDocente(docenteId) {
-            this.expandedDocenteId = (this.expandedDocenteId === docenteId) ? null : docenteId;
+        async seleccionarDocente(docenteId, nombre) {
+            if (! (await this.confirmarSiHayCambiosSinGuardar())) return;
+
+            this.editingDocenteId = docenteId;
+            this.nombreDocenteEnEdicion = nombre;
+            await this.$wire.call('editDocente', docenteId);
+            this.irAlPanelDeEdicion();
+            this.enfocarNombre();
         },
 
-        isExpanded(docenteId) {
-            return this.expandedDocenteId === docenteId;
+        async cancelarEdicion() {
+            if (! (await this.confirmarSiHayCambiosSinGuardar())) return;
+
+            this.editingDocenteId = null;
+            this.nombreDocenteEnEdicion = '';
+            await this.$wire.call('createNewDocente');
+            this.enfocarNombre();
         },
 
-        init() {
-            this.$watch('editingDocenteId', (val) => {
-                if (val && !this.minDocenteForm) {
-                    this.minDocenteForm = true;
-                }
-            });
-        }
+        async confirmarSiHayCambiosSinGuardar() {
+            const hayCambios = await this.$wire.hasUnsavedChanges();
+
+            if (! hayCambios) return true;
+
+            return window.confirm('Tenés cambios sin guardar en el formulario de docente. ¿Querés descartarlos?');
+        },
+
+        irAlPanelDeEdicion() {
+            this.$refs.panelEdicion?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            this.resaltarEdicion = true;
+            clearTimeout(this._resaltarTimer);
+            this._resaltarTimer = setTimeout(() => { this.resaltarEdicion = false; }, 1600);
+        },
+
+        enfocarNombre() {
+            this.$nextTick(() => this.$refs.nombreInput?.focus());
+        },
+
+        initObservadorPanel() {
+            this.observadorPanel?.disconnect();
+            this.observadorPanel = new IntersectionObserver(
+                (entries) => { this.panelVisible = entries[0]?.isIntersecting ?? true; },
+                { threshold: 0 },
+            );
+            this.observadorPanel.observe(this.$refs.panelEdicion);
+        },
     }"
     x-on:keydown.escape.window="deletingDocenteId = null"
     @docente-saved.window="
         editingDocenteId = $wire.get('editingDocenteId');
+        nombreDocenteEnEdicion = $wire.get('docenteForm.nombre');
     "
     @contextos-updated.window="$wire.refreshDocentes()"
     wire:init="inicializarComponente"
@@ -571,21 +610,45 @@ new #[Layout('layouts.app')] class extends Component
             </article>
         </section>
 
-        <section class="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <section
+            x-ref="panelEdicion"
+            x-init="initObservadorPanel()"
+            class="grid scroll-mt-24 gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]"
+        >
             {{-- Teacher Form Column --}}
-            <article class="glass-card card">
+            <article
+                class="glass-card card transition-shadow duration-300"
+                :class="resaltarEdicion ? 'ring-2 ring-primary/60' : (editingDocenteId ? 'ring-1 ring-primary/25' : '')"
+            >
                 <div class="card-body gap-4">
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <div class="space-y-1">
                             <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Docente</p>
-                            <h2 class="card-title text-lg text-base-content">
-                                {{ $editingDocenteId ? 'Editar docente' : 'Nuevo docente' }}
-                            </h2>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <h2 class="card-title text-lg text-base-content">
+                                    {{ $editingDocenteId ? 'Editando docente' : 'Nuevo docente' }}
+                                </h2>
+                                @if ($editingDocenteId)
+                                    <span class="badge badge-primary badge-sm gap-1">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="size-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487a2.1 2.1 0 1 1 2.97 2.97L8.07 19.22l-4.07 1.1 1.1-4.07L16.862 4.487Z" />
+                                        </svg>
+                                        {{ $docenteForm['nombre'] !== '' ? $docenteForm['nombre'] : 'En edición' }}
+                                    </span>
+                                @endif
+                            </div>
+                            @if ($editingDocenteId)
+                                <p class="text-sm text-base-content/60">Los cambios se aplican al docente seleccionado en el listado.</p>
+                            @endif
                         </div>
 
                         @if ($editingDocenteId)
-                            <button type="button" wire:click="createNewDocente" class="btn btn-ghost btn-sm">
-                                Nuevo registro
+                            <button
+                                type="button"
+                                x-on:click="cancelarEdicion()"
+                                class="btn btn-ghost btn-sm"
+                            >
+                                Cancelar edición
                             </button>
                         @endif
                     </div>
@@ -593,7 +656,7 @@ new #[Layout('layouts.app')] class extends Component
                     <form wire:submit="saveDocente" class="space-y-4">
                         <label class="form-control w-full">
                             <span class="label-text text-sm font-medium">Nombre completo</span>
-                            <input wire:model="docenteForm.nombre" type="text" class="input input-bordered w-full" placeholder="Ej. Ada Lovelace" />
+                            <input wire:model="docenteForm.nombre" x-ref="nombreInput" type="text" class="input input-bordered w-full" placeholder="Ej. Ada Lovelace" />
                             @error('docenteForm.nombre')
                                 <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
                             @enderror
@@ -635,7 +698,10 @@ new #[Layout('layouts.app')] class extends Component
             </article>
 
             {{-- Context Assignment Column (child component) --}}
-            <article class="glass-card card">
+            <article
+                class="glass-card card transition-shadow duration-300"
+                :class="resaltarEdicion ? 'ring-2 ring-primary/60' : (editingDocenteId ? 'ring-1 ring-primary/25' : '')"
+            >
                 <div class="card-body gap-4">
                     <div class="space-y-1">
                         <p class="text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Contexto habilitante</p>
@@ -665,7 +731,7 @@ new #[Layout('layouts.app')] class extends Component
                 </label>
             </div>
 
-            @if ($docentes->isEmpty())
+            @if ($this->docentes->isEmpty())
                 <x-mary-alert title="Todavía no hay docentes cargados en la proyección local." icon="o-information-circle" class="alert-info" />
             @else
                 <div class="glass-card card overflow-hidden">
@@ -682,7 +748,7 @@ new #[Layout('layouts.app')] class extends Component
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach ($docentes as $docente)
+                                @foreach ($this->docentes as $docente)
                                     @php
                                         $carrerasUnicas = $docente->contextos
                                             ->pluck('car_id')
@@ -692,20 +758,13 @@ new #[Layout('layouts.app')] class extends Component
                                     @endphp
                                     <tr
                                         wire:key="docente-row-{{ $docente->id }}"
-                                        @class([
-                                            'border-b border-base-300/60 transition cursor-pointer',
-                                            'bg-primary/5' => $editingDocenteId === $docente->id,
-                                            'hover:bg-base-200/40',
-                                        ])
-                                        x-on:click="
-                                            toggleDocente({{ $docente->id }});
-                                            $wire.set('selectedDocenteId', isExpanded({{ $docente->id }}) ? null : {{ $docente->id }});
-                                            $wire.call('editDocente', {{ $docente->id }});
-                                        "
+                                        class="border-b border-base-300/60 transition cursor-pointer hover:bg-base-200/40"
+                                        :class="editingDocenteId === {{ $docente->id }} ? 'bg-primary/5' : ''"
+                                        x-on:click="seleccionarDocente({{ $docente->id }}, @js($docente->nombre))"
                                     >
                                         <td class="w-8">
                                             <svg xmlns="http://www.w3.org/2000/svg"
-                                                :class="'size-4 transition-transform duration-200 ' + (isExpanded({{ $docente->id }}) ? 'rotate-90' : '')"
+                                                :class="'size-4 transition-transform duration-200 ' + (editingDocenteId === {{ $docente->id }} ? 'rotate-90 text-primary' : 'text-base-content/40')"
                                                 fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
                                             </svg>
@@ -719,6 +778,13 @@ new #[Layout('layouts.app')] class extends Component
                                                     'badge-ghost' => ! $docente->activo,
                                                 ])>
                                                     {{ $docente->activo ? 'Activo' : 'Inactivo' }}
+                                                </span>
+                                                <span
+                                                    x-cloak
+                                                    x-show="editingDocenteId === {{ $docente->id }}"
+                                                    class="badge badge-primary badge-xs"
+                                                >
+                                                    Editando
                                                 </span>
                                             </div>
                                         </td>
@@ -750,7 +816,11 @@ new #[Layout('layouts.app')] class extends Component
                                         </td>
                                         <td>
                                             <div class="flex items-center gap-2">
-                                                <span class="text-sm text-base-content/70 underline decoration-dotted underline-offset-2">
+                                                <span
+                                                    class="text-sm underline decoration-dotted underline-offset-2"
+                                                    :class="editingDocenteId === {{ $docente->id }} ? 'text-primary font-medium' : 'text-base-content/70'"
+                                                    x-text="editingDocenteId === {{ $docente->id }} ? 'En edición' : 'Editar'"
+                                                >
                                                     Editar
                                                 </span>
                                                 @if ($isGeneralAdmin)
@@ -774,9 +844,38 @@ new #[Layout('layouts.app')] class extends Component
                         </table>
                     </div>
                 </div>
+
+                <x-mary-pagination :rows="$this->docentes" />
             @endif
         </section>
     @endif
+
+    {{-- Sticky indicator: keeps track of who you're editing while scrolled away --}}
+    <div
+        x-cloak
+        x-show="editingDocenteId !== null && ! panelVisible"
+        x-transition
+        class="fixed bottom-6 right-6 z-40"
+    >
+        <div class="glass-card flex items-center gap-2 rounded-full border border-primary/30 bg-base-100/95 px-4 py-2.5 shadow-xl backdrop-blur">
+            <button
+                type="button"
+                x-on:click="irAlPanelDeEdicion()"
+                class="flex items-center gap-2 text-sm font-medium text-base-content"
+            >
+                <span class="badge badge-primary badge-xs"></span>
+                Editando: <span class="text-primary" x-text="nombreDocenteEnEdicion || 'docente'"></span>
+            </button>
+            <button
+                type="button"
+                x-on:click="cancelarEdicion()"
+                class="btn btn-ghost btn-xs btn-circle"
+                title="Cancelar edición"
+            >
+                ✕
+            </button>
+        </div>
+    </div>
 
     {{-- Delete confirmation modal --}}
     <div
@@ -810,6 +909,7 @@ new #[Layout('layouts.app')] class extends Component
                     type="button"
                     class="btn btn-error btn-sm"
                     x-on:click="
+                        if (editingDocenteId === deletingDocenteId) { editingDocenteId = null; nombreDocenteEnEdicion = ''; }
                         $wire.deleteDocente(deletingDocenteId);
                         deletingDocenteId = null;
                     "

@@ -68,7 +68,11 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
         return [$periodo, $formulario, $contexto, $docente, $evaluador];
     }
 
-    protected function mockAlumnoContext(User $user): void
+    /**
+     * @param  array<int, array<string, int>>|null  $materias
+     * @param  string|null  $expectedPleCodigo  si se pasa, exige que las inscripciones se consulten con ese periodo lectivo
+     */
+    protected function mockAlumnoContext(User $user, ?array $materias = null, ?string $expectedPleCodigo = null): void
     {
         $alumno = new stdClass;
         $alumno->alu_id = 42178;
@@ -79,21 +83,33 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
         $carrera->sed_id = 8;
         $carrera->ple_id = 2026;
 
-        $materia = new stdClass;
-        $materia->rsc_idcar = 14;
-        $materia->rsc_idsed = 8;
-        $materia->inm_idple = 2026;
-        $materia->imi_idmi2 = 301;
-        $materia->imi_idtur = 2;
-        $materia->imi_idsec = 4;
+        $materias ??= [
+            [
+                'rsc_idcar' => 14,
+                'rsc_idsed' => 8,
+                'inm_idple' => 2026,
+                'imi_idmi2' => 301,
+                'imi_idtur' => 2,
+                'imi_idsec' => 4,
+            ],
+        ];
+
+        $materiasRows = array_map(fn (array $materia): stdClass => (object) $materia, $materias);
 
         $service = Mockery::mock(AlumnoExternoService::class);
         $service->shouldReceive('resolverAlumno')->andReturn($alumno);
         $service->shouldReceive('carreras')->andReturn(new Collection([$carrera]));
-        $service->shouldReceive('materiasInscriptas')->andReturn(new Collection([$materia]));
+
+        if ($expectedPleCodigo !== null) {
+            $service->shouldReceive('materiasInscriptas')
+                ->with(42178, $expectedPleCodigo)
+                ->andReturn(new Collection($materiasRows));
+        } else {
+            $service->shouldReceive('materiasInscriptas')->andReturn(new Collection($materiasRows));
+        }
         $service->shouldReceive('catCarreras')->andReturn([14 => 'Ingeniería Informática']);
-        $service->shouldReceive('catTurnos')->andReturn([2 => 'Tarde']);
-        $service->shouldReceive('catMateriasPorIds')->andReturn([301 => 'Algoritmos']);
+        $service->shouldReceive('catTurnos')->andReturn([1 => 'Mañana', 2 => 'Tarde']);
+        $service->shouldReceive('catMateriasPorIds')->andReturn([301 => 'Algoritmos', 302 => 'Bases de Datos']);
 
         $this->app->instance(AlumnoExternoService::class, $service);
     }
@@ -363,13 +379,255 @@ class AlumnoEvaluacionDocenteFlowTest extends TestCase
 
         $this->mockAlumnoContext($user);
 
+        $this->actingAs($user);
+
+        // El primer render muestra el skeleton (cabecera visible, criterios aún no).
+        $this->get(route('alumno.evaluacion-docente.form', [$docente, $contexto]))
+            ->assertOk()
+            ->assertSeeText('Formulario de evaluación')
+            ->assertSeeText('Katherine Johnson');
+
+        // Tras wire:init (cargarDatos) aparecen los criterios y el botón de envío.
+        Volt::test('alumno.evaluacion-docente.form', ['docente' => $docente, 'contexto' => $contexto])
+            ->call('cargarDatos')
+            ->assertSeeText('Explica los contenidos con claridad.')
+            ->assertSeeText('Enviar evaluación');
+    }
+
+    public function test_muestra_aviso_y_no_renderiza_el_form_si_el_periodo_ya_finalizo(): void
+    {
+        $this->seed(FormularioEvaluacionSeeder::class);
+
+        /** @var User $user */
+        $user = User::factory()->create(['documento' => '5413971']);
+        Role::findOrCreate('ALUMNO', 'web');
+        $user->assignRole('ALUMNO');
+
+        // Periodo marcado activo pero con fecha_fin en el pasado.
+        PeriodoEvaluacion::query()->create([
+            'nombre' => 'Periodo vencido',
+            'fecha_inicio' => '2026-02-01',
+            'fecha_fin' => '2026-02-10',
+            'activo' => true,
+        ]);
+
+        $docente = Docente::query()->create([
+            'documento' => '4444444', 'nombre' => 'Katherine Johnson', 'activo' => true,
+        ]);
+
+        $contexto = DocenteContexto::query()->create([
+            'docente_id' => $docente->id,
+            'car_id' => 14, 'sed_id' => 8, 'ple_id' => 2026,
+            'mi2_id' => 301, 'tur_id' => 2, 'sec_id' => 4,
+            'activo' => true,
+        ]);
+
+        // Sin mock del servicio externo: la guarda de fechas corta antes del gate de elegibilidad.
         $this->actingAs($user)
             ->get(route('alumno.evaluacion-docente.form', [$docente, $contexto]))
             ->assertOk()
-            ->assertSeeText('Formulario de evaluación')
+            ->assertSeeText('El periodo de evaluación ya ha finalizado.')
+            ->assertDontSeeText('Enviar evaluación');
+    }
+
+    public function test_no_ofrece_contextos_que_mezclan_atributos_de_inscripciones_distintas(): void
+    {
+        $this->seed(FormularioEvaluacionSeeder::class);
+
+        /** @var User $user */
+        $user = User::factory()->create(['documento' => '5413971']);
+        Role::findOrCreate('ALUMNO', 'web');
+        $user->assignRole('ALUMNO');
+
+        PeriodoEvaluacion::query()->create([
+            'nombre' => 'Periodo Lectivo 2026',
+            'fecha_inicio' => '2026-02-01',
+            'fecha_fin' => '2026-11-30',
+            'activo' => true,
+        ]);
+
+        // Inscripto en: Algoritmos (301) turno Tarde/sección 4 y Bases de Datos (302) turno Mañana/sección 9.
+        $this->mockAlumnoContext($user, [
+            ['rsc_idcar' => 14, 'rsc_idsed' => 8, 'inm_idple' => 2026, 'imi_idmi2' => 301, 'imi_idtur' => 2, 'imi_idsec' => 4],
+            ['rsc_idcar' => 14, 'rsc_idsed' => 8, 'inm_idple' => 2026, 'imi_idmi2' => 302, 'imi_idtur' => 1, 'imi_idsec' => 9],
+        ]);
+
+        $docenteElegible = Docente::query()->create([
+            'documento' => '2222222', 'nombre' => 'Grace Hopper', 'activo' => true,
+        ]);
+
+        // Coincide con la inscripción real de Algoritmos (turno 2).
+        DocenteContexto::query()->create([
+            'docente_id' => $docenteElegible->id,
+            'car_id' => 14, 'sed_id' => 8, 'ple_id' => 2026,
+            'mi2_id' => 301, 'tur_id' => 2, 'sec_id' => 4,
+            'activo' => true,
+        ]);
+
+        $docenteNoElegible = Docente::query()->create([
+            'documento' => '3333333', 'nombre' => 'Barbara Liskov', 'activo' => true,
+        ]);
+
+        // Mezcla la materia de una inscripción (301) con el turno/sección de otra (1/9):
+        // el matching aplanado la aceptaba, el matching por tupla debe rechazarla.
+        DocenteContexto::query()->create([
+            'docente_id' => $docenteNoElegible->id,
+            'car_id' => 14, 'sed_id' => 8, 'ple_id' => 2026,
+            'mi2_id' => 301, 'tur_id' => 1, 'sec_id' => 9,
+            'activo' => true,
+        ]);
+
+        $this->actingAs($user);
+
+        Volt::test('alumno.evaluacion-docente.index')
+            ->call('cargarDocentes')
+            ->assertSeeText('Grace Hopper')
+            ->assertDontSeeText('Barbara Liskov');
+    }
+
+    public function test_no_ofrece_contextos_asignados_a_otra_campania_de_evaluacion(): void
+    {
+        $this->seed(FormularioEvaluacionSeeder::class);
+
+        /** @var User $user */
+        $user = User::factory()->create(['documento' => '5413971']);
+        Role::findOrCreate('ALUMNO', 'web');
+        $user->assignRole('ALUMNO');
+
+        $campaniaVieja = PeriodoEvaluacion::query()->create([
+            'nombre' => 'Campaña 2025',
+            'fecha_inicio' => '2025-02-01',
+            'fecha_fin' => '2025-11-30',
+            'activo' => false,
+        ]);
+
+        $campaniaActiva = PeriodoEvaluacion::query()->create([
+            'nombre' => 'Campaña 2026',
+            'fecha_inicio' => '2026-02-01',
+            'fecha_fin' => '2026-11-30',
+            'activo' => true,
+        ]);
+
+        $this->mockAlumnoContext($user);
+
+        $docenteCampaniaActiva = Docente::query()->create([
+            'documento' => '2222222', 'nombre' => 'Grace Hopper', 'activo' => true,
+        ]);
+
+        DocenteContexto::query()->create([
+            'docente_id' => $docenteCampaniaActiva->id,
+            'car_id' => 14, 'sed_id' => 8, 'ple_id' => 2026,
+            'mi2_id' => 301, 'tur_id' => 2, 'sec_id' => 4,
+            'periodo_evaluacion_id' => $campaniaActiva->id,
+            'activo' => true,
+        ]);
+
+        $docenteSinCampania = Docente::query()->create([
+            'documento' => '4444444', 'nombre' => 'Katherine Johnson', 'activo' => true,
+        ]);
+
+        // Sin campaña asignada: comodín, vale para cualquier campaña.
+        DocenteContexto::query()->create([
+            'docente_id' => $docenteSinCampania->id,
+            'car_id' => 14, 'sed_id' => 8, 'ple_id' => 2026,
+            'mi2_id' => 301, 'tur_id' => 2, 'sec_id' => 4,
+            'periodo_evaluacion_id' => null,
+            'activo' => true,
+        ]);
+
+        $docenteCampaniaVieja = Docente::query()->create([
+            'documento' => '3333333', 'nombre' => 'Barbara Liskov', 'activo' => true,
+        ]);
+
+        // Mismo contexto académico pero asignado a la campaña 2025: no debe aparecer.
+        DocenteContexto::query()->create([
+            'docente_id' => $docenteCampaniaVieja->id,
+            'car_id' => 14, 'sed_id' => 8, 'ple_id' => 2026,
+            'mi2_id' => 301, 'tur_id' => 2, 'sec_id' => 4,
+            'periodo_evaluacion_id' => $campaniaVieja->id,
+            'activo' => true,
+        ]);
+
+        $this->actingAs($user);
+
+        Volt::test('alumno.evaluacion-docente.index')
+            ->call('cargarDocentes')
+            ->assertSeeText('Grace Hopper')
             ->assertSeeText('Katherine Johnson')
-            ->assertSeeText('Explica los contenidos con claridad.')
-            ->assertSeeText('Enviar evaluación');
+            ->assertDontSeeText('Barbara Liskov');
+    }
+
+    public function test_consulta_las_inscripciones_por_el_periodo_lectivo_vinculado_a_la_campania(): void
+    {
+        $this->seed(FormularioEvaluacionSeeder::class);
+
+        /** @var User $user */
+        $user = User::factory()->create(['documento' => '5413971']);
+        Role::findOrCreate('ALUMNO', 'web');
+        $user->assignRole('ALUMNO');
+
+        PeriodoEvaluacion::query()->create([
+            'nombre' => 'Campaña 2026',
+            'ple_codigo' => '2026',
+            'fecha_inicio' => '2026-02-01',
+            'fecha_fin' => '2026-11-30',
+            'activo' => true,
+        ]);
+
+        $docente = Docente::query()->create([
+            'documento' => '2222222', 'nombre' => 'Grace Hopper', 'activo' => true,
+        ]);
+
+        DocenteContexto::query()->create([
+            'docente_id' => $docente->id,
+            'car_id' => 14, 'sed_id' => 8, 'ple_id' => 2026,
+            'mi2_id' => 301, 'tur_id' => 2, 'sec_id' => 4,
+            'activo' => true,
+        ]);
+
+        // El mock falla si materiasInscriptas no se consulta con el ple_codigo de la campaña.
+        $this->mockAlumnoContext($user, null, '2026');
+
+        $this->actingAs($user);
+
+        Volt::test('alumno.evaluacion-docente.index')
+            ->call('cargarDocentes')
+            ->assertSeeText('Grace Hopper');
+    }
+
+    public function test_no_permita_abrir_el_formulario_de_una_materia_en_la_que_no_esta_inscripto(): void
+    {
+        $this->seed(FormularioEvaluacionSeeder::class);
+
+        /** @var User $user */
+        $user = User::factory()->create(['documento' => '5413971']);
+        Role::findOrCreate('ALUMNO', 'web');
+        $user->assignRole('ALUMNO');
+
+        PeriodoEvaluacion::query()->create([
+            'nombre' => 'Periodo Lectivo 2026',
+            'fecha_inicio' => '2026-02-01',
+            'fecha_fin' => '2026-11-30',
+            'activo' => true,
+        ]);
+
+        $docente = Docente::query()->create([
+            'documento' => '4444444', 'nombre' => 'Katherine Johnson', 'activo' => true,
+        ]);
+
+        // Contexto de una materia (999) en la que el alumno NO está inscripto.
+        $contexto = DocenteContexto::query()->create([
+            'docente_id' => $docente->id,
+            'car_id' => 14, 'sed_id' => 8, 'ple_id' => 2026,
+            'mi2_id' => 999, 'tur_id' => 2, 'sec_id' => 4,
+            'activo' => true,
+        ]);
+
+        $this->mockAlumnoContext($user);
+
+        $this->actingAs($user)
+            ->get(route('alumno.evaluacion-docente.form', [$docente, $contexto]))
+            ->assertStatus(403);
     }
 
     public function test_no_permita_acceder_al_formulario_con_contexto_de_otro_docente(): void

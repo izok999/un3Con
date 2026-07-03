@@ -128,26 +128,30 @@ documento ──resolved via──▶ AlumnoExternoService::resolverAlumno()
 ### Teacher Evaluation Module
 ```
 PeriodoEvaluacion ──has many──▶ EvaluacionDocente
+PeriodoEvaluacion ──has many──▶ DocenteContexto (via periodo_evaluacion_id)
 FormularioEvaluacion ──has many──▶ FormularioCriterio
 FormularioEvaluacion ──has many──▶ EvaluacionDocente
 Docente ──has many──▶ DocenteContexto
 Docente ──has many──▶ EvaluacionDocente
+DocenteContexto ──has many──▶ EvaluacionDocente (via docente_contexto_id — one evaluation per evaluator × docente × periodo × formulario × contexto)
 EvaluacionDocente ──has many──▶ EvaluacionRespuesta
 EvaluacionRespuesta ──belongs to──▶ FormularioCriterio
 EvaluacionDocente ──belongs to──▶ User (as evaluador_user_id)
+Docente ──uses SoftDeletes──▶ deleted_at (historical evaluaciones preserved after deletion)
 ```
 
 ### Service Dependencies
+All evaluation-module services live under `App\Services\EvaluacionDocente\`.
 ```
-AlumnoExternoService
+AlumnoExternoService (App\Services\)
   ├── Used by: alumno Volt components, DocentesElegiblesResolver
   ├── Uses: DB::connection('pgsql_externa'), Cache
-  └── Cached methods: resolverAlumno(), carreras()
+  └── Cached methods: resolverAlumno(), carreras(), catCarreras(), catMateriasPorIds(), catSedes()
 
 GuardarEvaluacionDocente
   ├── Used by: evaluacion-docente.form Volt component
-  ├── Uses: EvaluacionDocente model, EvaluacionRespuesta model
-  └── Validates: type match, no duplicates, required criteria
+  ├── Uses: EvaluacionDocente model, EvaluacionRespuesta model, PuntajeCalculator
+  └── Validates: type match, no duplicates (scoped by docente_contexto_id), required criteria, periodo activo AND fecha_inicio/fecha_fin range
 
 PuntajeCalculator
   ├── Used by: GuardarEvaluacionDocente
@@ -156,7 +160,8 @@ PuntajeCalculator
 DocentesElegiblesResolver
   ├── Used by: evaluacion-docente.index Volt component
   ├── Uses: AlumnoExternoService, Docente model, DocenteContexto
-  └── Logic: NULL-as-wildcard context matching
+  ├── Returns: ['docente' => Docente, 'contexto' => DocenteContexto][] pairs — a docente appears once per matching subject/context
+  └── Logic: NULL-as-wildcard context matching (except mi2_id/materia, which requires strict match)
 ```
 
 ## Critical Implementation Paths
@@ -164,20 +169,20 @@ DocentesElegiblesResolver
 ### Path 1: Student Evaluates Teacher
 ```
 1. GET /evaluacion-docente
-   → evaluacion-docente.index (Volt)
-   → DocentesElegiblesResolver::eligibleForStudent($aluId)
-   → Renders teacher list with "Ya evaluado" tags
+   → evaluacion-docente.index (Volt), lazy-loaded via wire:init
+   → DocentesElegiblesResolver::paraAlumno($user) → Collection of ['docente' => Docente, 'contexto' => DocenteContexto] pairs
+   → Renders one card per docente×contexto (subject), with "Ya evaluado" tags
 
-2. GET /evaluacion-docente/{docente}
+2. GET /evaluacion-docente/{docente}/{contexto}
    → evaluacion-docente.form (Volt)
-   → Validates: active period exists, form active, context match, no prior evaluation
+   → Validates: period activo AND within fecha_inicio/fecha_fin, form active, context match, no prior evaluation for this docente_contexto_id
    → Renders form with FormularioCriterio items
 
 3. POST (form submission) via Livewire action
-   → GuardarEvaluacionDocente::guardar($data)
-   → Validates: type match, required criteria filled, no duplicate
-   → PuntajeCalculator::calcular($respuestas, $criterios)
-   → Persists EvaluacionDocente + EvaluacionRespuesta records
+   → GuardarEvaluacionDocente::guardar($periodo, $formulario, $docente, $evaluador, $tipo, $respuestas, $contextoSnapshot, $docenteContexto)
+   → Validates: type match, required criteria filled, no duplicate (scoped to docente_contexto_id)
+   → PuntajeCalculator::calcular($insumosCalculo)
+   → Persists EvaluacionDocente (with docente_contexto_id) + EvaluacionRespuesta records
    → Flash message + redirect to index
 ```
 
@@ -210,14 +215,14 @@ DocentesElegiblesResolver
 ### Path 3: Component Architecture for Teacher Management
 
 ```
-docentes.blade.php (parent, 450 lines)
+docentes.blade.php (parent, ~820 lines — grown from the original ~450 as faculty/sede filtering and admin-scope UI were added)
   ├── Teacher CRUD (create, edit, save)
   ├── Stats cards (teacher count, active count, context count)
   ├── Search bar with debounce
   ├── Teacher list with Alpine.js row expansion
   └── <livewire:docente-contextos> child
 
-docente-contextos.blade.php (child, 1075 lines)
+docente-contextos.blade.php (child, ~1110 lines)
   ├── Manual context form (6 cascade selects)
   ├── External assignment table (lazy-loaded via "Importar todos")
   ├── Batch import (checkbox selection + single server call)
@@ -237,8 +242,9 @@ docente-contextos.blade.php (child, 1075 lines)
 
 ## Middleware Stack
 ```
-Global: auth, legacy.account.complete, verified, oauth.documento
+Global (all web routes, registered in bootstrap/app.php): SetLocale
+Route-scoped: auth, legacy.account.complete, verified, oauth.documento
   ├── Role: ALUMNO → student routes
   ├── Role: ADMIN|ADMIN_UNIDAD_ACADEMICA + academic.unit.scope
-  │   → admin panel (scoped)
-  └── Role: ADMIN → global admin (config, academic unit admin management)
+  │   → admin panel (scoped: consulta-alumno, docentes, resultados)
+  └── Role: ADMIN only → global admin (configuración, administradores-unidades)

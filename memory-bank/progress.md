@@ -1,6 +1,6 @@
 # Progress — CONSULTOR UNESYS
 
-## Current Status: Active Development (June 2026)
+## Current Status: Active Development (last commit June 25, 2026 — `7ee071d`)
 
 The application is functional with the core student portal, admin panel, and teacher evaluation module operational. Several features are in various stages of completion.
 
@@ -40,10 +40,12 @@ The application is functional with the core student portal, admin panel, and tea
 | Anti-duplicate guard | ✅ | Unique per evaluator × teacher × period × form |
 | Schema guard | ✅ | Friendly message if migrations missing |
 | Form seeders | ✅ | 2 forms (alumno + funcionario) with criteria |
-| Results/reports | ✅ | Per-period teacher scores, per-criterion breakdown, evaluator counts, materia/carrera display |
+| Results/reports | ✅ | Per-period teacher scores, per-criterion breakdown, evaluator counts, materia/carrera display, Chart.js visualizations |
+| Evaluation-per-context | ✅ | `docente_contexto_id` FK links each evaluation to a specific subject/context; docente can be evaluated once per subject |
+| Docente soft delete | ✅ | `SoftDeletes` on `Docente`; historical evaluations preserved |
+| Period date validation | ✅ | `GuardarEvaluacionDocente::ensurePeriodoActivo()` checks `fecha_inicio <= now <= fecha_fin` in addition to `activo` |
 | **Funcionario flow** | ❌ | Model exists, no UI/route/component |
 | **Draft state** | ❌ | ESTADO_BORRADOR defined but unused |
-| **Period date validation** | ❌ | Checks `activo` flag, not date range |
 
 ### Admin Panel
 - [x] Consulta Alumno — Look up any student's academic data
@@ -57,23 +59,29 @@ The application is functional with the core student portal, admin panel, and tea
 - [x] UNE visual theme (uneTheme / uneThemeDark)
 - [x] Glass-morphism utilities (glass-card, glass-surface, glass-sidebar, glass-navbar)
 - [x] Responsive layout (sidebar desktop + bottom nav mobile)
-- [x] Theme toggle with localStorage persistence
+- [x] Theme toggle with hybrid persistence — cookie (`une-theme`, 1yr) + `localStorage` fallback, set in `resources/js/app.js`
 - [x] Skeletal loading patterns
 - [x] bg-app-pattern background texture
+- [x] i18n — locale switcher (`es`, `en`, `pt`, `gn`), persisted to `users.locale` + session via `SetLocale` middleware
+- [x] Normativas page (`/normativas`) — institutional/legal documents from `config/normativas.php`
 
 ### Testing
 | Test File | Coverage | Status |
 |-----------|----------|--------|
-| AdminEvaluacionDocenteConfigurationTest | Config page, create period, period deactivation, create form, add criteria | ✅ Passing |
-| AdminEvaluacionDocenteManagementTest | Teacher page, create teacher, add context, scope, sync action, idempotency | ✅ Passing |
-| SincronizarContextosDocentesCommandTest | Batch sync, skip inactive, idempotency, --periodo option | ✅ Passing |
-| AlumnoEvaluacionDocenteFlowTest | Weighted score, duplicate block, required criteria, type guard, index, form, schema guard | ✅ Passing |
-| AdminEvaluacionDocenteResultadosTest | Admin access, non-admin 403, period selector, empty states, score display, materias/carreras, draft exclusion | ✅ Passing |
-| AdminAcademicUnitAdminsTest | Admin access, assign faculties, custom sede, badges with sede, clear scopes, filter by faculty, unsaved indicator, 403 for unit admin, traceability (assigned_by/assigned_at + UI) | ✅ Passing |
-| AdminConsultaAlumnoScopeTest | Unit admin scope enforcement, student inside/outside scope | ✅ Passing |
-| RoleAccessTest | Role-based route access, menu visibility per role | ✅ Passing |
+| AdminEvaluacionDocenteConfigurationTest | Config page, create period, period deactivation, create form, add criteria | ✅ |
+| AdminEvaluacionDocenteManagementTest | Teacher page, create teacher, add context, scope, sync action, idempotency | ✅ |
+| SincronizarContextosDocentesCommandTest | Batch sync, skip inactive, idempotency, --periodo option | ✅ |
+| AlumnoEvaluacionDocenteFlowTest | Weighted score, duplicate block, required criteria, type guard, index, form, schema guard | ✅ |
+| AdminEvaluacionDocenteResultadosTest | Admin access, non-admin 403, period selector, empty states, score display, materias/carreras, draft exclusion | ✅ |
+| AdminAcademicUnitAdminsTest | Admin access, assign faculties, custom sede, badges with sede, clear scopes, filter by faculty, unsaved indicator, 403 for unit admin, traceability (assigned_by/assigned_at + UI) | ✅ |
+| AdminConsultaAlumnoScopeTest | Unit admin scope enforcement, student inside/outside scope | ✅ |
+| RoleAccessTest | Role-based route access, menu visibility per role | ✅ |
+| LocaleSwitcherTest | Guarani + other locale switching | ✅ |
+| PuntajeCalculatorTest (Unit) | Weighted score formula | ✅ |
+| Auth suite (Authentication, EmailVerification, PasswordConfirmation/Reset/Update, Registration, OAuth) | Standard Breeze + OAuth flows | ✅ |
+| SyncLegacyAlumnoUsersCommandTest | Legacy user batch sync command | ✅ |
 
-**Total: 30 tests, all passing (130 assertions)**
+**~128 test methods across Feature/Unit suites** (exact pass count not re-verified in this pass — Sail was not running; last known-good run was 30 tests/130 assertions for the evaluation+admin subset before the June 19–25 context-linking and i18n additions grew the suite)
 
 ### Infrastructure
 - [x] Docker/Sail development environment
@@ -108,16 +116,9 @@ The application is functional with the core student portal, admin panel, and tea
    - Show pending drafts in evaluation index
    - **Estimated effort:** UI changes + service logic update
 
-### Low Priority
-4. **Period Date Validation**
-   - Enforce `fecha_inicio <= now <= fecha_fin` in GuardarEvaluacionDocente
-   - Edge case: period could be `activo=true` but outside date range
-   - **Estimated effort:** 2-3 lines in service + test
-
-5. **ADMIN_UNIDAD_ACADEMICA Scope Hardening**
-   - Currently config routes are blocked by middleware only
-   - Could add additional checks in components for defense-in-depth
-   - **Estimated effort:** Minor, defensive
+### Done since last review (kept here for traceability, remove once confirmed stable)
+- ~~Period Date Validation~~ — implemented in `GuardarEvaluacionDocente::ensurePeriodoActivo()` (commit `97e4824`, June 16, 2026)
+- ~~ADMIN_UNIDAD_ACADEMICA Scope Hardening for config screens~~ — `/admin/evaluacion-docente/configuracion` and `/admin/administradores-unidades` are now in a route group gated to ADMIN only, separate from the shared ADMIN + ADMIN_UNIDAD_ACADEMICA group (`routes/web.php`)
 
 ---
 
@@ -130,8 +131,6 @@ The application is functional with the core student portal, admin panel, and tea
 3. **MaryUI Modal Conflict:** `x-modal` conflicts with Breeze's anonymous modal component. Use `x-mary-modal` or local wrappers.
 
 4. **No Model Factories for Evaluation Module:** Current tests create models directly with `new Model()` or `Model::create()`, making test data setup verbose. Factories would simplify this.
-
-5. **Period Date Not Enforced:** An active period outside its date range still allows evaluation submissions. Low risk in practice since admins manage activation manually.
 
 ---
 
@@ -149,19 +148,24 @@ The application is functional with the core student portal, admin panel, and tea
 - Role system expanded to include ADMIN_UNIDAD_ACADEMICA
 - LegacyAlumnoUserSyncService for batch user sync
 
-### Date: June 2026 (Current)
+### Date: June 2026
 - Teacher evaluation module implemented
 - Context sync mechanism (UI + CLI) delivered
 - Schema guard pattern adopted for graceful migration handling
-- 30 PHPUnit tests written and passing (130 assertions)
 - Volt class-based SFC convention solidified
 - UNE visual theme system finalized
-- Results/reports screen with per-criterion breakdown and materia/carrera display delivered
+- Results/reports screen with per-criterion breakdown, materia/carrera display, and Chart.js visualizations delivered (chart library question resolved: Chart.js chosen)
 - Materia and carrera names resolved from legacy DB (AlumnoExternoService) and displayed in student index, form, and admin results views
 - Admin academic unit assignments enhanced: sede selector, faculty filter, unsaved changes indicator, "Quitar todas", traceability with assigned_by/assigned_at
+- Evaluation services moved into `App\Services\EvaluacionDocente\` namespace
+- Period date validation and Docente soft delete added (June 16)
+- ADMIN_UNIDAD_ACADEMICA scoped out of config/admin-management screens via route grouping (June 16)
+- Evaluations linked to specific docente context (`docente_contexto_id`), allowing per-subject evaluation of the same teacher (June 19–25)
+- i18n locale switching (es/en/pt/gn) and hybrid theme persistence (cookie + localStorage) delivered
+- Normativas page added for institutional/legal documents
+- "Extracto Académico" removed from navigation (underlying feature retained, just unlinked)
 
 ### Future Decisions Needed
 - Export format for evaluation results (PDF vs Excel vs both)
-- Chart library for reports (Chart.js vs Alpine-based vs server-rendered)
 - Whether to implement the draft state or keep evaluations as single-submit
 - Whether FUNCIONARIO evaluation needs same context-matching logic as ALUMNO

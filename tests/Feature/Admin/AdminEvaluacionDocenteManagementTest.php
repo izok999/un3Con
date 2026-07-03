@@ -390,6 +390,97 @@ class AdminEvaluacionDocenteManagementTest extends TestCase
         $this->assertDatabaseCount('docente_contextos', 1);
     }
 
+    public function test_form_warns_and_does_not_leak_unfiltered_catalog_when_external_query_fails(): void
+    {
+        $admin = $this->adminUser();
+
+        $docente = Docente::query()->create([
+            'nombre' => 'Ada Lovelace',
+            'documento' => '5555555',
+            'activo' => true,
+        ]);
+
+        $this->mock(AlumnoExternoService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('catCarreras')->andReturn(['999' => 'CARRERA NO RELACIONADA']);
+            $mock->shouldReceive('catSedes')->andReturn(['8' => 'Sede Central']);
+            $mock->shouldReceive('catPeriodos')->andReturn([]);
+            $mock->shouldReceive('catTurnos')->andReturn([]);
+            $mock->shouldReceive('catSecciones')->andReturn([]);
+            $mock->shouldReceive('catCarrerasPorSede')
+                ->with(8)
+                ->andThrow(new \RuntimeException('external db unreachable'));
+        });
+
+        $this->actingAs($admin);
+
+        $testable = Volt::test('admin.evaluacion-docente.docente-contextos', [
+            'selectedDocenteId' => $docente->id,
+            'allowedSedeIds' => [],
+        ])
+            ->set('contextoForm.sed_id', '8');
+
+        // The unfiltered global catalog ("CARRERA NO RELACIONADA") must never be
+        // presented as if it were the sede-filtered result.
+        $testable->assertDontSee('CARRERA NO RELACIONADA');
+        $this->assertSame([], $testable->instance()->formCarreras);
+        $testable->assertSee('No se pudo consultar el catálogo externo de carreras');
+
+        // Switching sede clears the stale warning instead of leaving it stuck.
+        $testable->set('contextoForm.sed_id', '');
+        $testable->assertDontSee('No se pudo consultar el catálogo externo de carreras');
+    }
+
+    public function test_docente_list_is_paginated_ten_per_page(): void
+    {
+        $admin = $this->adminUser();
+
+        foreach (range(1, 12) as $i) {
+            Docente::query()->create([
+                'nombre' => sprintf('Docente %02d', $i),
+                'documento' => (string) (1000000 + $i),
+                'activo' => true,
+            ]);
+        }
+
+        $this->actingAs($admin);
+
+        $testable = Volt::test('admin.evaluacion-docente.docentes')
+            ->call('inicializarComponente');
+
+        $testable->assertSee('Docente 01')->assertDontSee('Docente 11');
+
+        $this->assertSame(10, $testable->instance()->docentes->count());
+        $this->assertSame(12, $testable->instance()->docentes->total());
+
+        $testable->call('gotoPage', 2);
+        $testable->assertSee('Docente 11')->assertDontSee('Docente 01');
+    }
+
+    public function test_has_unsaved_changes_detects_dirty_form_and_resets_after_save(): void
+    {
+        $admin = $this->adminUser();
+
+        $docente = Docente::query()->create([
+            'nombre' => 'Ada Lovelace',
+            'documento' => '2222222',
+            'activo' => true,
+        ]);
+
+        $this->actingAs($admin);
+
+        $testable = Volt::test('admin.evaluacion-docente.docentes')
+            ->call('inicializarComponente')
+            ->call('editDocente', $docente->id);
+
+        $this->assertFalse($testable->instance()->hasUnsavedChanges());
+
+        $testable->set('docenteForm.nombre', 'Ada Lovelace Editado');
+        $this->assertTrue($testable->instance()->hasUnsavedChanges());
+
+        $testable->call('saveDocente');
+        $this->assertFalse($testable->instance()->hasUnsavedChanges());
+    }
+
     public function test_sync_adds_error_when_docente_has_no_documento(): void
     {
         $admin = $this->adminUser();

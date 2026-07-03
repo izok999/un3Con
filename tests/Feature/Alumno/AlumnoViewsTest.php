@@ -712,7 +712,7 @@ class AlumnoViewsTest extends TestCase
                 public Collection $asistenciaMock,
             ) {}
 
-            public function materiasInscriptas(int $aluId): Collection
+            public function materiasInscriptas(int $aluId, ?string $pleCodigo = null): Collection
             {
                 throw new RuntimeException('Fallback de materias no deberia ejecutarse.');
             }
@@ -791,7 +791,7 @@ class AlumnoViewsTest extends TestCase
                 public Collection $asistenciaMock,
             ) {}
 
-            public function materiasInscriptas(int $aluId): Collection
+            public function materiasInscriptas(int $aluId, ?string $pleCodigo = null): Collection
             {
                 return $this->materiasMock;
             }

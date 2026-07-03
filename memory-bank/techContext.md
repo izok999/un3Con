@@ -232,21 +232,24 @@ app/
 ├── Providers/
 ├── Services/
 │   ├── AlumnoExternoService.php        # All external DB queries
-│   ├── DocentesElegiblesResolver.php   # Teacher-student context matching
-│   ├── GuardarEvaluacionDocente.php    # Evaluation validation + persistence
-│   ├── PuntajeCalculator.php           # Weighted score calculation
-│   └── LegacyAlumnoUserSyncService.php # Batch user sync
+│   ├── LegacyAlumnoUserSyncService.php # Batch user sync
+│   └── EvaluacionDocente/              # Evaluation module services (namespaced)
+│       ├── DocentesElegiblesResolver.php   # Teacher-student context matching, returns docente+contexto pairs
+│       ├── GuardarEvaluacionDocente.php    # Evaluation validation + persistence (period dates, duplicates, criteria)
+│       └── PuntajeCalculator.php           # Weighted score calculation
 └── View/
 
 resources/
 ├── css/app.css                # Tailwind 4 + DaisyUI themes + glass utilities
-├── js/app.js                  # Theme toggle + navbar scroll
+├── js/app.js                  # Theme toggle (cookie + localStorage hybrid persistence) + navbar scroll
 ├── views/
 │   ├── layouts/
 │   │   ├── app.blade.php      # Authenticated shell (sidebar + topbar + mobile nav)
 │   │   └── guest.blade.php    # Unauthenticated shell
 │   ├── dashboard.blade.php    # Post-login dashboard
 │   ├── profile.blade.php
+│   ├── pages/
+│   │   └── normativas/index.blade.php   # Institutional/legal documents page
 │   ├── livewire/
 │   │   ├── alumno/            # Student portal Volt SFCs
 │   │   │   ├── mis-carreras.blade.php
@@ -255,25 +258,33 @@ resources/
 │   │   │   ├── mis-deudas.blade.php
 │   │   │   └── evaluacion-docente/
 │   │   │       ├── index.blade.php
-│   │   │       └── form.blade.php
+│   │   │       └── form.blade.php   # route: /evaluacion-docente/{docente}/{contexto}
 │   │   ├── admin/             # Admin panel Volt SFCs
 │   │   │   ├── consulta-alumno.blade.php
 │   │   │   ├── administradores-unidades.blade.php
 │   │   │   └── evaluacion-docente/
-│   │   │       ├── configuracion.blade.php
-│   │   │       ├── docentes.blade.php
-│   │   │       └── docente-contextos.blade.php
+│   │   │       ├── configuracion.blade.php    # ADMIN-only route group
+│   │   │       ├── docentes.blade.php         # parent component (~820 lines)
+│   │   │       ├── docente-contextos.blade.php # child component (~1100 lines)
+│   │   │       └── resultados.blade.php
 │   │   └── pages/auth/        # Login, register, OAuth
 │   └── components/            # Local MaryUI wrappers
-├── docs/                      # Project documentation
+├── docs/                      # Project documentation (design notes, not user-facing)
 │   ├── PROMPT_MAESTRO.md      # Master LLM prompt
 │   ├── Evalaución.md          # Teacher evaluation spec (portable)
 │   ├── modulo-evaluacion-docente.md  # Module status doc
 │   ├── Guia.md                # Complete setup guide
-│   ├── marco_legal.md
+│   ├── marco_legal.md         # Legal framework backing the Normativas page
 │   ├── legacy-queries.md
-│   └── ...                    # Additional docs
-└── lang/                      # Translations (es, en, pt, gn)
+│   ├── TRANSLATIONS.md        # i18n system documentation
+│   ├── persistencia-tema-y-redireccion-login-2026-05-19.md
+│   ├── alcance-admin-unidad-academica-2026-06-01.md
+│   └── ...                    # Additional dated design docs
+└── (no resources/lang — see root-level lang/ below)
+
+config/normativas.php          # Institutional/legal document list backing /normativas
+
+lang/                          # Translations — es.json, en.json, pt.json, gn.json (root-level, NOT resources/lang)
 
 config/
 ├── database.php               # pgsql + pgsql_externa connections
@@ -303,7 +314,13 @@ tests/
 
 .agents/skills/               # Domain-specific AI agent skills
 ├── alumno-dashboard.agent.md
-└── une-frontend.agent.md
+├── maryui-development/SKILL.md         # MaryUI prefix rules, anti-patterns from real bugs
+├── laravel-best-practices/SKILL.md
+├── laravel-permission-development/SKILL.md
+├── livewire-development/SKILL.md
+├── socialite-development/SKILL.md
+├── tailwindcss-development/SKILL.md
+└── volt-development/SKILL.md
 
 memory-bank/                   # Cline Memory Bank (this directory)
 ├── projectbrief.md

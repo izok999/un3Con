@@ -2,34 +2,47 @@
 
 ## Current Work Focus
 
-As of **June 2026**, the project is in active development with the following completed and pending areas:
+As of **June 25, 2026** (last commit `7ee071d`), the project is in active development with the following completed and pending areas:
 
     ### Completed (✅)
-- Schema: 7 tables + migrations for teacher evaluation module
-- Admin configuration: periods, forms, criteria management
-- Teacher & context management (admin + scoped ADMIN_UNIDAD_ACADEMICA)
+- Schema: teacher evaluation module tables + migrations, including later additions (`docente_contexto_id` on evaluations, `periodo_evaluacion_id` on contexts, soft deletes on docentes, `assigned_by`/`assigned_at` on scopes)
+- Admin configuration: periods, forms, criteria management — restricted to ADMIN only (`/admin/evaluacion-docente/configuracion`)
+- Teacher & context management (admin + scoped ADMIN_UNIDAD_ACADEMICA) — split parent/child Volt components
 - Context sync from legacy system (UI action + artisan command `evaluacion:sincronizar-contextos`)
-- Student flow: index + form + submission for teacher evaluation
+- Student flow: index + form + submission for teacher evaluation, evaluated **per docente-contexto pair** (a docente can appear multiple times, once per subject taught)
 - Weighted score calculation (`PuntajeCalculator`)
-- **Results/reports screen** — Admin view of teacher scores per period, per-criterion breakdown, evaluator counts, materia/carrera badges
+- **Period date validation** — `GuardarEvaluacionDocente::ensurePeriodoActivo()` validates `fecha_inicio <= now <= fecha_fin` in addition to the `activo` flag
+- **Docente soft delete** — `SoftDeletes` trait on `Docente`, preserves historical evaluations
+- **Evaluation-to-context linking** — `docente_contexto_id` FK on `EvaluacionDocente`; uniqueness constraint now `(periodo, formulario, docente, evaluador, docente_contexto_id)`, so the same evaluator can evaluate the same docente in different subjects
+- **Results/reports screen** — Admin view of teacher scores per period, per-criterion breakdown, evaluator counts, materia/carrera badges, Chart.js visualizations
 - Materia & carrera name resolution from legacy DB (`catCarreras()`, `catMateriasPorIds()`) displayed in student index, form, and admin results
 - Dashboard evaluation pending toast ("Tienes evaluaciones pendientes") with link to `/evaluacion-docente`
 - Schema guard (friendly message if migrations missing)
 - Form seeders (2 forms: student + funcionario)
-- Tests: 25 PHPUnit tests covering admin config, teacher management, sync command, student evaluation flow, results display
-- Student academic dashboard (carreras, materias, deudas, extracto académico)
-- OAuth (Google Socialite) authentication
+- Admin academic unit assignments — faculty/sede scoping, traceability (`assigned_by`, `assigned_at`), filter by faculty, unsaved-changes indicator
+- Services reorganized under `App\Services\EvaluacionDocente\` namespace (`GuardarEvaluacionDocente`, `PuntajeCalculator`, `DocentesElegiblesResolver`)
+- Tests: ~128 PHPUnit test methods across Feature/Unit suites covering admin config, teacher management, sync command, student evaluation flow, results display, role access, academic-unit scope, locale switching
+- Student academic dashboard (carreras, materias, deudas) — "Extracto Académico" nav entry removed (June 15) to simplify navigation; underlying extracto service/view still exist, just not linked in nav
+- OAuth (Google Socialite) authentication with hybrid theme persistence (cookie + localStorage) and unified post-login redirect to dashboard
 - Role system with Spatie (`ADMIN`, `ADMIN_UNIDAD_ACADEMICA`, `FUNCIONARIO`, `ALUMNO`)
 - Legacy student sync service
 - UNE visual theme (glass-morphism, dark mode, responsive)
+- **i18n / locale switching** — `lang/{es,en,pt,gn}.json`, `SetLocale` middleware, locale persisted to `users.locale` + session, UI switcher component
+- **Normativas page** — `/normativas` route showing institutional/legal documents (`config/normativas.php` + PDFs in `public/docs/normativas/`)
+- **MaryUI development skill** — `.agents/skills/maryui-development/SKILL.md`, plus other project skills under `.agents/skills/`
 
 ### In Progress / Pending (❌)
-1. **Funcionario evaluation flow** — Model, table, and seeder exist for `tipo=funcionario`, but no UI route/component
-2. **Draft state** — `ESTADO_BORRADOR` constant defined but save-and-continue-later not implemented
-3. **Model factories** — No `DocenteFactory`, `DocenteContextoFactory`, `EvaluacionDocenteFactory` for tests
-4. **Period date validation** — `GuardarEvaluacionDocente` checks `activo === true` but not `fecha_inicio/fecha_fin` range
+1. **Funcionario evaluation flow** — Model, table, and seeder exist for `tipo=funcionario`, but no UI route/component. `RoleName::Funcionario` currently only gets access to `/bienvenida`.
+2. **Draft state** — `ESTADO_BORRADOR` constant defined on `EvaluacionDocente` but save-and-continue-later not implemented anywhere
+3. **Model factories** — Still no `DocenteFactory`, `DocenteContextoFactory`, `EvaluacionDocenteFactory`, etc. — only `UserFactory` exists in `database/factories/`; tests build evaluation-module models inline
 
 ## Recent Changes
+
+    ### June 25, 2026 — Evaluations Linked to Docente Context
+- **`docente_contexto_id` FK on `EvaluacionDocente`** (migration `2026_06_19_140244`), plus `periodo_evaluacion_id` on `docente_contextos` (`2026_06_19_143252`)
+- **Uniqueness constraint expanded** to `(periodo, formulario, docente, evaluador, docente_contexto_id)` (migration `2026_06_19_142029`) — same evaluator can now evaluate the same docente for different subjects without hitting the anti-duplicate guard
+- **`DocentesElegiblesResolver`** rewritten to return `['docente' => Docente, 'contexto' => DocenteContexto]` pairs instead of unique docentes
+- **UI updated** to display context type per evaluable row
 
     ### June 16, 2026 — Period Date Validation + Docente Soft Delete + UI Consistency
 - **Period date validation**: `GuardarEvaluacionDocente::ensurePeriodoActivo()` now validates `fecha_inicio <= now <= fecha_fin` in addition to `activo === true`; blocks submissions outside valid date range with clear Spanish messages; test added (`test_no_permita_evaluar_fuera_del_rango_del_periodo`)
@@ -121,8 +134,10 @@ As of **June 2026**, the project is in active development with the following com
 1. **Implement FUNCIONARIO evaluation flow** — Route, Volt component, tests
 2. **Add model factories** — To expand test coverage
 3. **Implement draft state** — Save-and-continue-later for evaluations
-4. **Add period date validation** — Enforce `fecha_inicio/fecha_fin` in submission
-5. **Scope ADMIN_UNIDAD_ACADEMICA** to not access config screens (currently guarded by middleware only)
+
+### Recently resolved (previously listed here)
+- ~~Add period date validation~~ — done, see `GuardarEvaluacionDocente::ensurePeriodoActivo()` (commit `97e4824`)
+- ~~Scope ADMIN_UNIDAD_ACADEMICA out of config screens~~ — done, `/admin/evaluacion-docente/configuracion` and `/admin/administradores-unidades` now live in the ADMIN-only route group (`routes/web.php`), separate from the shared ADMIN + ADMIN_UNIDAD_ACADEMICA group
 
 ## Active Decisions & Considerations
 

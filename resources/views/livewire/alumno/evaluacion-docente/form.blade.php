@@ -6,6 +6,7 @@ use App\Models\EvaluacionDocente;
 use App\Models\FormularioEvaluacion;
 use App\Models\PeriodoEvaluacion;
 use App\Services\AlumnoExternoService;
+use App\Services\EvaluacionDocente\DocentesElegiblesResolver;
 use App\Services\EvaluacionDocente\GuardarEvaluacionDocente;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -37,17 +38,20 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $materiaTurno = '';
 
+    public bool $ready = false;
+
     public function boot(): void
     {
         $this->criterios = collect();
     }
 
-    public function mount(Docente $docente, DocenteContexto $contexto): void
+    public function mount(Docente $docente, DocenteContexto $contexto, DocentesElegiblesResolver $resolver): void
     {
         $user = Auth::user();
 
         abort_unless($user, 403);
         abort_if($docente->id !== $contexto->docente_id, 403);
+        abort_unless($docente->activo, 403);
         abort_unless($contexto->activo, 403);
 
         $this->docente = $docente;
@@ -60,7 +64,6 @@ new #[Layout('layouts.app')] class extends Component
         $this->formulario = FormularioEvaluacion::query()
             ->where('tipo_evaluador', FormularioEvaluacion::TIPO_ALUMNO)
             ->where('activo', true)
-            ->with(['criterios' => fn ($query) => $query->where('activo', true)->orderBy('orden')])
             ->first();
 
         if (! $this->periodo) {
@@ -75,57 +78,24 @@ new #[Layout('layouts.app')] class extends Component
             return;
         }
 
-        // Build contexto snapshot from the DocenteContexto
-        $this->contextoSnapshot = array_filter([
-            'car_id' => $contexto->car_id,
-            'sed_id' => $contexto->sed_id,
-            'ple_id' => $contexto->ple_id,
-            'mi2_id' => $contexto->mi2_id,
-            'tur_id' => $contexto->tur_id,
-            'sec_id' => $contexto->sec_id,
-            'materias' => $contexto->mi2_id !== null
-                ? [['mi2_id' => $contexto->mi2_id, 'materia' => '', 'tur_id' => $contexto->tur_id ?? '', 'turno' => '']]
-                : [],
-        ], fn (mixed $value): bool => $value !== null && $value !== []);
+        // El periodo debe estar activo Y dentro del rango de fechas. Se valida
+        // acá para mostrar el aviso al abrir el formulario, en vez de dejar que
+        // el alumno complete todo y recién falle silenciosamente al guardar.
+        if ($this->periodo->fecha_inicio && now()->startOfDay()->lt($this->periodo->fecha_inicio->startOfDay())) {
+            $this->error = 'El periodo de evaluación aún no ha comenzado.';
 
-        if ($contexto->car_id !== null) {
-            try {
-                $carreras = app(AlumnoExternoService::class)->catCarreras();
-                $this->nombreCarrera = $carreras[(int) $contexto->car_id] ?? "Carrera #{$contexto->car_id}";
-            } catch (\Throwable) {
-                $this->nombreCarrera = "Carrera #{$contexto->car_id}";
-            }
+            return;
         }
 
-        // Resolve materia name
-        if ($contexto->mi2_id !== null) {
-            try {
-                $materiasMap = app(AlumnoExternoService::class)->catMateriasPorIds([$contexto->mi2_id]);
-                $this->materiaNombre = $materiasMap[(int) $contexto->mi2_id] ?? "Materia #{$contexto->mi2_id}";
-            } catch (\Throwable) {
-                $this->materiaNombre = "Materia #{$contexto->mi2_id}";
-            }
+        if ($this->periodo->fecha_fin && now()->gt($this->periodo->fecha_fin->endOfDay())) {
+            $this->error = 'El periodo de evaluación ya ha finalizado.';
+
+            return;
         }
 
-        // Resolve turno
-        if ($contexto->tur_id !== null) {
-            try {
-                $turnos = app(AlumnoExternoService::class)->catTurnos();
-                $this->materiaTurno = $turnos[(int) $contexto->tur_id] ?? '';
-            } catch (\Throwable) {
-                $this->materiaTurno = '';
-            }
-        }
-
-        // Update snapshot with resolved names
-        $this->contextoSnapshot['materias'] = [
-            [
-                'mi2_id' => $contexto->mi2_id,
-                'materia' => $this->materiaNombre,
-                'tur_id' => $contexto->tur_id ?? '',
-                'turno' => $this->materiaTurno,
-            ],
-        ];
+        // El alumno solo puede evaluar contextos que correspondan a sus
+        // propias inscripciones (evita evaluar por manipulación de URL).
+        abort_unless($resolver->esElegibleParaAlumno($user, $contexto, $this->periodo), 403);
 
         if (EvaluacionDocente::query()
             ->where('periodo_evaluacion_id', $this->periodo->id)
@@ -140,7 +110,74 @@ new #[Layout('layouts.app')] class extends Component
             return;
         }
 
-        $this->criterios = $this->formulario->criterios;
+        // Snapshot base (sin llamadas externas). Los nombres de catálogo y los
+        // criterios se resuelven en cargarDatos() para mostrar el skeleton.
+        $this->contextoSnapshot = array_filter([
+            'car_id' => $contexto->car_id,
+            'sed_id' => $contexto->sed_id,
+            'ple_id' => $contexto->ple_id,
+            'mi2_id' => $contexto->mi2_id,
+            'tur_id' => $contexto->tur_id,
+            'sec_id' => $contexto->sec_id,
+            'materias' => $contexto->mi2_id !== null
+                ? [['mi2_id' => $contexto->mi2_id, 'materia' => '', 'tur_id' => $contexto->tur_id ?? '', 'turno' => '']]
+                : [],
+        ], fn (mixed $value): bool => $value !== null && $value !== []);
+    }
+
+    /**
+     * Resuelve los nombres de catálogo (externos, potencialmente lentos) y los
+     * criterios del formulario. Se dispara con wire:init tras el primer render,
+     * de modo que el alumno ve el skeleton mientras se cargan.
+     */
+    public function cargarDatos(): void
+    {
+        if ($this->error !== '' || ! $this->formulario) {
+            return;
+        }
+
+        $contexto = $this->contexto;
+
+        if ($contexto->car_id !== null) {
+            try {
+                $carreras = app(AlumnoExternoService::class)->catCarreras();
+                $this->nombreCarrera = $carreras[(int) $contexto->car_id] ?? "Carrera #{$contexto->car_id}";
+            } catch (Throwable) {
+                $this->nombreCarrera = "Carrera #{$contexto->car_id}";
+            }
+        }
+
+        if ($contexto->mi2_id !== null) {
+            try {
+                $materiasMap = app(AlumnoExternoService::class)->catMateriasPorIds([$contexto->mi2_id]);
+                $this->materiaNombre = $materiasMap[(int) $contexto->mi2_id] ?? "Materia #{$contexto->mi2_id}";
+            } catch (Throwable) {
+                $this->materiaNombre = "Materia #{$contexto->mi2_id}";
+            }
+        }
+
+        if ($contexto->tur_id !== null) {
+            try {
+                $turnos = app(AlumnoExternoService::class)->catTurnos();
+                $this->materiaTurno = $turnos[(int) $contexto->tur_id] ?? '';
+            } catch (Throwable) {
+                $this->materiaTurno = '';
+            }
+        }
+
+        $this->contextoSnapshot['materias'] = [
+            [
+                'mi2_id' => $contexto->mi2_id,
+                'materia' => $this->materiaNombre,
+                'tur_id' => $contexto->tur_id ?? '',
+                'turno' => $this->materiaTurno,
+            ],
+        ];
+
+        $this->criterios = $this->formulario->criterios()
+            ->where('activo', true)
+            ->orderBy('orden')
+            ->get();
 
         foreach ($this->criterios as $criterio) {
             $this->respuestas[$criterio->id] = [
@@ -149,6 +186,8 @@ new #[Layout('layouts.app')] class extends Component
                 'observacion' => '',
             ];
         }
+
+        $this->ready = true;
     }
 
     public function submit(GuardarEvaluacionDocente $service): void
@@ -191,7 +230,12 @@ new #[Layout('layouts.app')] class extends Component
     }
 }; ?>
 
-<div class="space-y-6">
+<div
+    class="space-y-6"
+    @if ($error === '')
+        wire:init="cargarDatos"
+    @endif
+>
     <div>
         <a href="{{ route('alumno.evaluacion-docente') }}" class="inline-flex items-center gap-1.5 text-sm text-base-content/55 transition hover:text-primary" wire:navigate>
             <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -206,6 +250,49 @@ new #[Layout('layouts.app')] class extends Component
     @if ($error !== '')
         <x-mary-alert title="{{ $error }}" icon="o-exclamation-triangle" class="alert-warning" />
     @else
+        @php
+            $errorGeneral = collect(['periodo', 'formulario', 'tipo_evaluador', 'evaluacion', 'respuestas'])
+                ->map(fn (string $clave) => $errors->first($clave))
+                ->first(fn (?string $mensaje) => filled($mensaje));
+        @endphp
+
+        @if ($errorGeneral)
+            <x-mary-alert title="{{ $errorGeneral }}" icon="o-exclamation-triangle" class="alert-error" />
+        @endif
+
+        @if (! $ready)
+            <div wire:key="form-skeleton">
+                <section class="glass-card card">
+                    <div class="card-body gap-4">
+                        <div class="space-y-2">
+                            <div class="h-3 w-32 animate-pulse rounded-full bg-base-300/60"></div>
+                            <div class="h-6 w-64 animate-pulse rounded-lg bg-base-300/70"></div>
+                            <div class="h-4 w-44 animate-pulse rounded-full bg-base-300/50"></div>
+                            <div class="mt-2 h-16 w-full animate-pulse rounded-2xl bg-base-300/40"></div>
+                        </div>
+                        <div class="h-16 w-full animate-pulse rounded-2xl bg-base-300/30"></div>
+                    </div>
+                </section>
+
+                <div class="mt-4 space-y-4">
+                    @for ($i = 0; $i < 4; $i++)
+                        <section class="glass-card card">
+                            <div class="card-body gap-4">
+                                <div class="space-y-2">
+                                    <div class="h-3 w-24 animate-pulse rounded-full bg-base-300/60"></div>
+                                    <div class="h-5 w-3/4 animate-pulse rounded-lg bg-base-300/70"></div>
+                                </div>
+                                <div class="h-11 w-full max-w-xs animate-pulse rounded-lg bg-base-300/50"></div>
+                            </div>
+                        </section>
+                    @endfor
+
+                    <div class="flex justify-end">
+                        <div class="h-11 w-48 animate-pulse rounded-lg bg-base-300/60"></div>
+                    </div>
+                </div>
+            </div>
+        @else
         <section class="glass-card card">
             <div class="card-body gap-4">
                 <div class="space-y-1">
@@ -284,5 +371,6 @@ new #[Layout('layouts.app')] class extends Component
                 </button>
             </div>
         </form>
+        @endif
     @endif
 </div>

@@ -346,15 +346,24 @@ class AlumnoExternoService
     }
 
     /**
-     * Materias inscriptas vigentes en el periodo actual.
+     * Materias inscriptas del alumno.
      * sh_movimientos.vw_alumnos_inscriptos_materias_14 - es super lenta
+     *
+     * Con $pleCodigo se filtra por ese periodo lectivo concreto (sin exigir
+     * imi_vigent, para que la evaluación docente pueda correr aunque el
+     * legacy ya haya apagado la vigencia del periodo). Sin $pleCodigo se
+     * mantiene el comportamiento histórico: solo inscripciones vigentes.
      */
-    public function materiasInscriptas(int $aluId): Collection
+    public function materiasInscriptas(int $aluId, ?string $pleCodigo = null): Collection
     {
         return $this->query()
             ->table('sh_movimientos.vw_alumnos_inscriptos_materias_14')
             ->where('alu_id', $aluId)
-            ->where('imi_vigent', true)
+            ->when(
+                $pleCodigo !== null,
+                fn ($query) => $query->where('ple_codigo', $pleCodigo),
+                fn ($query) => $query->where('imi_vigent', true),
+            )
             ->get();
     }
 
@@ -674,6 +683,27 @@ class AlumnoExternoService
                 ->get()
                 ->mapWithKeys(fn ($row) => [
                     (int) $row->ple_id => trim($row->ple_codigo).' — '.trim($row->ple_descri),
+                ])
+                ->all();
+        });
+    }
+
+    /**
+     * Catálogo de periodos lectivos por código: [ple_codigo => 'ple_codigo — ple_descri'].
+     * Usado para vincular campañas de evaluación al periodo lectivo del legacy.
+     *
+     * @return array<int|string, string>
+     */
+    public function catPeriodosLectivosPorCodigo(): array
+    {
+        return Cache::remember('ext_cat_periodos_codigo', 3600, function (): array {
+            return $this->query()
+                ->table('sh_maestros.vw_periodo_lectivo_11')
+                ->select(['ple_codigo', 'ple_descri'])
+                ->orderByDesc('ple_codigo')
+                ->get()
+                ->mapWithKeys(fn ($row) => [
+                    trim((string) $row->ple_codigo) => trim((string) $row->ple_codigo).' — '.trim((string) $row->ple_descri),
                 ])
                 ->all();
         });

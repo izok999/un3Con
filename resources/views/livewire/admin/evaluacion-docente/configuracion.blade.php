@@ -3,6 +3,7 @@
 use App\Models\FormularioCriterio;
 use App\Models\FormularioEvaluacion;
 use App\Models\PeriodoEvaluacion;
+use App\Services\AlumnoExternoService;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -35,6 +36,9 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $schemaMessage = '';
 
+    /** @var array<int|string, string> [ple_codigo => etiqueta] */
+    public array $catPeriodosLectivos = [];
+
     public function boot(): void
     {
         $this->periodos = collect();
@@ -57,6 +61,12 @@ new #[Layout('layouts.app')] class extends Component
 
         $this->loadPeriodos();
         $this->loadFormularios();
+
+        try {
+            $this->catPeriodosLectivos = app(AlumnoExternoService::class)->catPeriodosLectivosPorCodigo();
+        } catch (\Throwable) {
+            // Catálogo externo no disponible: se permite carga manual del código.
+        }
     }
 
     public function getSelectedFormularioProperty(): ?FormularioEvaluacion
@@ -80,6 +90,7 @@ new #[Layout('layouts.app')] class extends Component
         $this->editingPeriodoId = $periodo->id;
         $this->periodoForm = [
             'nombre' => $periodo->nombre,
+            'ple_codigo' => (string) ($periodo->ple_codigo ?? ''),
             'fecha_inicio' => $periodo->fecha_inicio?->format('Y-m-d') ?? '',
             'fecha_fin' => $periodo->fecha_fin?->format('Y-m-d') ?? '',
             'activo' => $periodo->activo,
@@ -96,8 +107,11 @@ new #[Layout('layouts.app')] class extends Component
 
         $validated = $this->validate($this->periodoRules());
 
+        $pleCodigo = trim((string) ($validated['periodoForm']['ple_codigo'] ?? ''));
+
         $payload = [
             'nombre' => trim($validated['periodoForm']['nombre']),
+            'ple_codigo' => $pleCodigo !== '' ? $pleCodigo : null,
             'fecha_inicio' => $validated['periodoForm']['fecha_inicio'],
             'fecha_fin' => $validated['periodoForm']['fecha_fin'],
             'activo' => (bool) ($validated['periodoForm']['activo'] ?? false),
@@ -125,6 +139,7 @@ new #[Layout('layouts.app')] class extends Component
         $this->editingPeriodoId = $periodo->id;
         $this->periodoForm = [
             'nombre' => $periodo->nombre,
+            'ple_codigo' => (string) ($periodo->ple_codigo ?? ''),
             'fecha_inicio' => $periodo->fecha_inicio?->format('Y-m-d') ?? '',
             'fecha_fin' => $periodo->fecha_fin?->format('Y-m-d') ?? '',
             'activo' => $periodo->activo,
@@ -341,6 +356,7 @@ new #[Layout('layouts.app')] class extends Component
                 'max:255',
                 Rule::unique('periodos_evaluacion', 'nombre')->ignore($this->editingPeriodoId),
             ],
+            'periodoForm.ple_codigo' => ['nullable', 'string', 'max:20'],
             'periodoForm.fecha_inicio' => ['required', 'date'],
             'periodoForm.fecha_fin' => ['required', 'date', 'after_or_equal:periodoForm.fecha_inicio'],
             'periodoForm.activo' => ['boolean'],
@@ -398,6 +414,7 @@ new #[Layout('layouts.app')] class extends Component
         $this->editingPeriodoId = null;
         $this->periodoForm = [
             'nombre' => '',
+            'ple_codigo' => '',
             'fecha_inicio' => '',
             'fecha_fin' => '',
             'activo' => false,
@@ -519,6 +536,25 @@ new #[Layout('layouts.app')] class extends Component
                             @enderror
                         </label>
 
+                        <label class="form-control w-full">
+                            <span class="label-text text-sm font-medium">Periodo lectivo evaluado</span>
+                            @if (! empty($catPeriodosLectivos))
+                                <select wire:model="periodoForm.ple_codigo" class="select select-bordered w-full">
+                                    <option value="">— Sin vincular (usa inscripciones vigentes) —</option>
+                                    @foreach ($catPeriodosLectivos as $codigo => $etiqueta)
+                                        <option value="{{ $codigo }}">{{ $etiqueta }}</option>
+                                    @endforeach
+                                </select>
+                            @else
+                                <input wire:model="periodoForm.ple_codigo" type="text" class="input input-bordered w-full" placeholder="Ej. 2026" />
+                                <span class="mt-1 text-xs text-base-content/55">No se pudo consultar el catálogo externo de periodos lectivos. Podés cargar el código manualmente.</span>
+                            @endif
+                            <span class="mt-1 text-xs text-base-content/55">Al vincularlo, los alumnos ven las materias en las que se inscribieron en ese periodo lectivo, aunque el sistema académico ya no las marque vigentes.</span>
+                            @error('periodoForm.ple_codigo')
+                                <span class="mt-1 text-sm font-medium text-error">{{ $message }}</span>
+                            @enderror
+                        </label>
+
                         <div class="grid gap-4 md:grid-cols-2">
                             <label class="form-control w-full">
                                 <span class="label-text text-sm font-medium">Fecha inicio</span>
@@ -572,6 +608,9 @@ new #[Layout('layouts.app')] class extends Component
                                                 <span class="badge {{ $periodo->activo ? 'badge-success' : 'badge-ghost' }} badge-sm">
                                                     {{ $periodo->activo ? 'Activo' : 'Inactivo' }}
                                                 </span>
+                                                @if ($periodo->ple_codigo)
+                                                    <span class="badge badge-outline badge-sm">PL {{ $periodo->ple_codigo }}</span>
+                                                @endif
                                             </div>
                                             <p class="text-sm text-base-content/65">
                                                 {{ $periodo->fecha_inicio?->format('d/m/Y') }} al {{ $periodo->fecha_fin?->format('d/m/Y') }}
