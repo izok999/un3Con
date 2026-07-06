@@ -1,0 +1,19 @@
+# =============================================================================
+# userlist.txt — Credenciales para PgBouncer
+# Copiar a: /etc/pgbouncer/userlist.txt
+# Permisos: sudo chmod 600 /etc/pgbouncer/userlist.txt
+#           sudo chown postgres:postgres /etc/pgbouncer/userlist.txt
+#
+# Para obtener el hash MD5 del usuario de PostgreSQL, ejecutar en psql:
+#   SELECT concat('md5', md5(concat('TU_PASSWORD', 'TU_USUARIO'))) AS hash;
+#
+# Ejemplo si usuario=consultor_user y password=mipassword:
+#   SELECT concat('md5', md5('mipasswordconsultor_user'));
+#
+# Formato: "usuario" "md5hash_o_password_en_texto_plano"
+# =============================================================================
+
+"consultor_user" "md5<REEMPLAZAR_CON_HASH>"
+
+# Alternativa con password en texto plano (menos seguro, pero más simple para empezar):
+# "consultor_user" "tu_password_aqui"

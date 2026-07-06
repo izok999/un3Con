@@ -12,7 +12,6 @@
     "Si tu cuenta local ya usa el mismo correo que Google, la vamos a enlazar automáticamente. Si es tu primer ingreso con Google, después te vamos a pedir tu cédula para enlazar tu cuenta de alumno.": "Si tu cuenta local ya usa el mismo correo que Google, la vamos a enlazar automáticamente. Si es tu primer ingreso con Google, después te vamos a pedir tu cédula para enlazar tu cuenta de alumno.",
     "¿No tenés cuenta?": "¿No tenés cuenta?",
     "Registrate": "Registrate",
-
     "Dashboard": "Dashboard",
     "Bienvenido, :name": "Bienvenido, :name",
     "Usá el menú lateral para acceder a tus consultas académicas y financieras.": "Usá el menú lateral para acceder a tus consultas académicas y financieras.",
@@ -29,5 +28,8 @@
     "Deudas y saldos": "Deudas y saldos",
     "Panel general": "Panel general",
     "Tu acceso está listo": "Tu acceso está listo",
-    "Usá el menú lateral para navegar por los módulos habilitados para tu rol.": "Usá el menú lateral para navegar por los módulos habilitados para tu rol."
+    "Usá el menú lateral para navegar por los módulos habilitados para tu rol.": "Usá el menú lateral para navegar por los módulos habilitados para tu rol.",
+    "auth.failed": "Estas credenciales no coinciden con nuestros registros.",
+    "auth.password": "La contraseña ingresada es incorrecta.",
+    "auth.throttle": "Demasiados intentos de acceso. Por favor intentá nuevamente en :seconds segundos."
 }
