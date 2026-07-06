@@ -36,6 +36,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // TRUSTED HOSTS — previene HTTP Host Header injection
         $middleware->trustHosts(at: [
             'www.une.edu.py',
+            '10.10.10.226', // TEMPORAL: pruebas directas por IP, quitar antes de ir a produccion
         ]);
 
         $middleware->web(append: [

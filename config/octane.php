@@ -12,7 +12,6 @@ use Laravel\Octane\Events\WorkerStopping;
 use Laravel\Octane\Listeners\CollectGarbage;
 use Laravel\Octane\Listeners\DisconnectFromDatabases;
 use Laravel\Octane\Listeners\EnsureUploadedFilesAreValid;
-use Laravel\Octane\Listeners\EnsureUploadedFilesCanBeValidated;
 use Laravel\Octane\Listeners\FlushTemporaryContainerInstances;
 use Laravel\Octane\Listeners\FlushUploadedFiles;
 use Laravel\Octane\Listeners\ReportException;
@@ -31,6 +30,13 @@ return [
     |--------------------------------------------------------------------------
     */
     'server' => env('OCTANE_SERVER', 'frankenphp'),
+
+    /*
+    | Limite de ejecucion por request que Octane inyecta a FrankenPHP.
+    | Default del paquete: 30s. Las vistas legacy de consulta-alumno lo
+    | superan; 120s hasta optimizar esa pagina (carga perezosa por tab).
+    */
+    'max_execution_time' => (int) env('OCTANE_MAX_EXECUTION_TIME', 120),
 
     /*
     |--------------------------------------------------------------------------
@@ -106,7 +112,6 @@ return [
     'listeners' => [
         WorkerStarting::class => [
             EnsureUploadedFilesAreValid::class,
-            EnsureUploadedFilesCanBeValidated::class,
         ],
 
         RequestReceived::class => [
