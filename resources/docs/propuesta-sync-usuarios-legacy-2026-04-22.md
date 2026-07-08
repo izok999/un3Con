@@ -389,3 +389,30 @@ La recomendación es:
 - reutilizar la misma lógica tanto desde consola como desde ADMIN.
 
 Si este planteamiento te cierra, el siguiente paso sería implementarlo como servicio + comando real, y luego enganchar una versión puntual desde el panel de administración.
+
+## Addendum 2026-07-08: filtros para migración por olas
+
+Verificado contra la base externa real (Fase 0):
+
+- `sh_maestros.vw_alumnos_00` no expone ninguna fecha de matriculación ni ingreso. El filtro temporal se resuelve por periodo lectivo (`ple_codigo`) de las habilitaciones.
+- `sh_movimientos.vw_alumnos_habilitacion_22` expone `car_id`, `sed_id`, `uac_descri` (texto, sin id propio), `ple_codigo`.
+- Universo: 62.639 registros, 62.638 documentos únicos (cero duplicados globales), 1 sin documento, 3.670 alumnos sin ninguna habilitación (solo entran con el barrido sin filtros).
+
+Opciones agregadas al comando:
+
+```bash
+php artisan alumnos:sync-legacy-users \
+  {--carrera= : car_id en vw_alumnos_habilitacion_22} \
+  {--sede= : sed_id} \
+  {--unidad= : coincidencia parcial sobre uac_descri} \
+  {--periodo-desde= : habilitaciones con ple_codigo >= valor}
+```
+
+Los filtros son combinables entre sí y con `--solo-faltantes`/`--dry-run`. La detección de documentos duplicados se calcula siempre sobre el universo completo, sin importar el filtro aplicado.
+
+Secuencia recomendada de olas en producción:
+
+1. Casos puntuales con `--documento= --dry-run`.
+2. Piloto con una unidad chica (ej. `--unidad="BELLAS ARTES"`, 1.347 alumnos) en dry-run y luego real.
+3. Resto de unidades con `--solo-faltantes`.
+4. Barrido final sin filtros con `--solo-faltantes` para capturar a los alumnos sin habilitación.

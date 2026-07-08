@@ -4,21 +4,15 @@ namespace App\Services;
 
 use App\Models\User;
 use Illuminate\Support\Str;
-use Throwable;
 use Spatie\Permission\Models\Role;
+use Throwable;
 
 class LegacyAlumnoUserSyncService
 {
-    /**
-     * @param  array{documento?: string|null, solo_faltantes?: bool, chunk?: int, dry_run?: bool}  $options
-     * @return array{processed: int, created: int, updated: int, skipped: int, conflicts: int, errors: int}
-     */
-    public function __construct(public AlumnoExternoService $alumnoExternoService)
-    {
-    }
+    public function __construct(public AlumnoExternoService $alumnoExternoService) {}
 
     /**
-     * @param  array{documento?: string|null, solo_faltantes?: bool, chunk?: int, dry_run?: bool}  $options
+     * @param  array{documento?: string|null, solo_faltantes?: bool, chunk?: int, dry_run?: bool, carrera?: int|string|null, sede?: int|string|null, unidad?: string|null, periodo_desde?: int|string|null}  $options
      * @return array{processed: int, created: int, updated: int, skipped: int, conflicts: int, errors: int}
      */
     public function sync(array $options = []): array
@@ -36,11 +30,17 @@ class LegacyAlumnoUserSyncService
         $onlyMissing = (bool) ($options['solo_faltantes'] ?? false);
         $chunkSize = max(1, (int) ($options['chunk'] ?? 500));
         $dryRun = (bool) ($options['dry_run'] ?? false);
+        $filtros = [
+            'carrera' => $options['carrera'] ?? null,
+            'sede' => $options['sede'] ?? null,
+            'unidad' => $options['unidad'] ?? null,
+            'periodo_desde' => $options['periodo_desde'] ?? null,
+        ];
 
         Role::findOrCreate('ALUMNO', 'web');
 
         $this->alumnoExternoService
-            ->alumnosParaSincronizar($documento)
+            ->alumnosParaSincronizar($documento, $filtros)
             ->chunk($chunkSize)
             ->each(function (iterable $legacyStudents) use (&$stats, $dryRun, $onlyMissing): void {
                 foreach ($legacyStudents as $legacyStudent) {

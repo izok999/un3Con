@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Database\Query\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -99,21 +100,69 @@ class AlumnoExternoService
     /**
      * Lista de alumnos apta para sincronización masiva de usuarios locales.
      *
+     * Filtros opcionales y combinables, resueltos contra vw_alumnos_habilitacion_22:
+     * - carrera: car_id
+     * - sede: sed_id
+     * - unidad: coincidencia parcial (ilike) sobre uac_descri
+     * - periodo_desde: habilitaciones con ple_codigo::numeric >= valor
+     *
+     * El duplicate_count se calcula sobre el universo completo (sin filtros) para
+     * que un documento repetido en dos carreras distintas siga detectándose como
+     * conflicto aunque el filtro deje visible una sola de sus filas.
+     *
+     * @param  array{carrera?: int|string|null, sede?: int|string|null, unidad?: string|null, periodo_desde?: int|string|null}  $filtros
      * @return LazyCollection<int, array<string, mixed>>
      */
-    public function alumnosParaSincronizar(?string $documento = null): LazyCollection
+    public function alumnosParaSincronizar(?string $documento = null, array $filtros = []): LazyCollection
     {
-        return $this->query()
+        $duplicados = $this->query()
             ->table('sh_maestros.vw_alumnos_00')
-            ->select(['alu_id', 'alu_perdoc', 'per_nombre', 'per_apelli'])
-            ->selectRaw('count(*) over (partition by alu_perdoc) as duplicate_count')
+            ->select('alu_perdoc')
+            ->selectRaw('count(*) as duplicate_count')
             ->whereNotNull('alu_perdoc')
+            ->groupBy('alu_perdoc');
+
+        return $this->query()
+            ->table('sh_maestros.vw_alumnos_00 as alumnos')
+            ->joinSub($duplicados, 'duplicados', 'duplicados.alu_perdoc', '=', 'alumnos.alu_perdoc')
+            ->select(['alumnos.alu_id', 'alumnos.alu_perdoc', 'alumnos.per_nombre', 'alumnos.per_apelli', 'duplicados.duplicate_count'])
             ->when($documento, function ($query, string $documento) {
-                $query->where('alu_perdoc', $documento);
+                $query->where('alumnos.alu_perdoc', $documento);
             })
-            ->orderBy('alu_id')
+            ->when($this->hayFiltrosDeHabilitacion($filtros), function ($query) use ($filtros) {
+                $query->whereIn('alumnos.alu_id', $this->subqueryAlumnosPorHabilitacion($filtros));
+            })
+            ->orderBy('alumnos.alu_id')
             ->cursor()
             ->map(fn ($row) => (array) $row);
+    }
+
+    /**
+     * @param  array{carrera?: int|string|null, sede?: int|string|null, unidad?: string|null, periodo_desde?: int|string|null}  $filtros
+     */
+    protected function hayFiltrosDeHabilitacion(array $filtros): bool
+    {
+        return filled($filtros['carrera'] ?? null)
+            || filled($filtros['sede'] ?? null)
+            || filled($filtros['unidad'] ?? null)
+            || filled($filtros['periodo_desde'] ?? null);
+    }
+
+    /**
+     * Subconsulta de alu_id con al menos una habilitación que cumpla los filtros.
+     *
+     * @param  array{carrera?: int|string|null, sede?: int|string|null, unidad?: string|null, periodo_desde?: int|string|null}  $filtros
+     */
+    protected function subqueryAlumnosPorHabilitacion(array $filtros): Builder
+    {
+        return $this->query()
+            ->table('sh_movimientos.vw_alumnos_habilitacion_22')
+            ->select('alu_id')
+            ->distinct()
+            ->when(filled($filtros['carrera'] ?? null), fn ($query) => $query->where('car_id', (int) $filtros['carrera']))
+            ->when(filled($filtros['sede'] ?? null), fn ($query) => $query->where('sed_id', (int) $filtros['sede']))
+            ->when(filled($filtros['unidad'] ?? null), fn ($query) => $query->where('uac_descri', 'ilike', '%'.trim((string) $filtros['unidad']).'%'))
+            ->when(filled($filtros['periodo_desde'] ?? null), fn ($query) => $query->whereRaw('ple_codigo::numeric >= ?', [(int) $filtros['periodo_desde']]));
     }
 
     /**

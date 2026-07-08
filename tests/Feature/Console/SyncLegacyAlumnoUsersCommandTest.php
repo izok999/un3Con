@@ -131,15 +131,85 @@ class SyncLegacyAlumnoUsersCommandTest extends TestCase
         $this->assertSame('local@example.com', $user->email);
     }
 
+    public function test_command_passes_filters_to_external_service(): void
+    {
+        $this->mockLegacyStudents(
+            [
+                [
+                    'alu_id' => 1,
+                    'alu_perdoc' => '1234567',
+                    'per_nombre' => 'Juan',
+                    'per_apelli' => 'Perez',
+                    'duplicate_count' => 1,
+                ],
+            ],
+            filtros: [
+                'carrera' => '12',
+                'sede' => '3',
+                'unidad' => 'FILOSOFÍA',
+                'periodo_desde' => '2024',
+            ],
+        );
+
+        $this->artisan('alumnos:sync-legacy-users', [
+            '--carrera' => '12',
+            '--sede' => '3',
+            '--unidad' => 'FILOSOFÍA',
+            '--periodo-desde' => '2024',
+        ])
+            ->expectsOutputToContain('Filtros aplicados: --carrera=12 --sede=3 --unidad=FILOSOFÍA --periodo-desde=2024')
+            ->expectsOutputToContain('Creados: 1')
+            ->assertSuccessful();
+    }
+
+    public function test_command_rejects_non_numeric_filter_values(): void
+    {
+        $this->mock(AlumnoExternoService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('alumnosParaSincronizar');
+        });
+
+        $this->artisan('alumnos:sync-legacy-users', ['--carrera' => 'abc'])
+            ->expectsOutputToContain('La opción --carrera debe ser numérica')
+            ->assertFailed();
+    }
+
+    public function test_command_marks_globally_duplicated_documento_as_conflict(): void
+    {
+        $this->mockLegacyStudents([
+            [
+                'alu_id' => 1,
+                'alu_perdoc' => '1234567',
+                'per_nombre' => 'Juan',
+                'per_apelli' => 'Perez',
+                'duplicate_count' => 2,
+            ],
+        ]);
+
+        $this->artisan('alumnos:sync-legacy-users')
+            ->expectsOutputToContain('Conflictos: 1')
+            ->expectsOutputToContain('Creados: 0')
+            ->assertSuccessful();
+
+        $this->assertNull(User::query()->firstWhere('documento', '1234567'));
+    }
+
     /**
      * @param  array<int, array<string, mixed>>  $legacyStudents
+     * @param  array<string, string|null>  $filtros
      */
-    protected function mockLegacyStudents(array $legacyStudents, ?string $documento = null): void
+    protected function mockLegacyStudents(array $legacyStudents, ?string $documento = null, array $filtros = []): void
     {
-        $this->mock(AlumnoExternoService::class, function (MockInterface $mock) use ($legacyStudents, $documento): void {
+        $expectedFiltros = array_merge([
+            'carrera' => null,
+            'sede' => null,
+            'unidad' => null,
+            'periodo_desde' => null,
+        ], $filtros);
+
+        $this->mock(AlumnoExternoService::class, function (MockInterface $mock) use ($legacyStudents, $documento, $expectedFiltros): void {
             $mock->shouldReceive('alumnosParaSincronizar')
                 ->once()
-                ->with($documento)
+                ->with($documento, $expectedFiltros)
                 ->andReturn(LazyCollection::make($legacyStudents));
         });
     }
