@@ -240,6 +240,10 @@ class OAuthAuthenticationTest extends TestCase
         $alumno->alu_perdoc = '1234567';
 
         $service = Mockery::mock(AlumnoExternoService::class);
+        $service->shouldReceive('autenticarConsultor')
+            ->once()
+            ->with('1234567', '9876', Mockery::any())
+            ->andReturn(['alu_id' => 1]);
         $service->shouldReceive('resolverAlumno')
             ->once()
             ->with('1234567')
@@ -249,7 +253,8 @@ class OAuthAuthenticationTest extends TestCase
         $this->actingAs($oauthUser);
 
         $component = Volt::test('pages.auth.link-documento')
-            ->set('documento', '1234567');
+            ->set('documento', '1234567')
+            ->set('pin', '9876');
 
         $component->call('linkDocumento');
 
@@ -266,6 +271,75 @@ class OAuthAuthenticationTest extends TestCase
         $this->assertTrue($existingStudent->hasRole('ALUMNO'));
         $this->assertAuthenticatedAs($existingStudent);
         $this->assertNull($oauthUser->fresh());
+    }
+
+    public function test_link_documento_rejects_invalid_pin_and_does_not_merge(): void
+    {
+        Role::findOrCreate('ALUMNO', 'web');
+
+        /** @var User $existingStudent */
+        $existingStudent = User::factory()->create([
+            'email' => 'alumno-1234567@consultor.invalid',
+            'documento' => '1234567',
+            'auth_provider' => null,
+            'auth_provider_id' => null,
+        ]);
+
+        /** @var User $oauthUser */
+        $oauthUser = User::factory()->create([
+            'email' => 'atacante@gmail.com',
+            'documento' => null,
+            'password' => null,
+            'auth_provider' => 'google',
+            'auth_provider_id' => 'google-999',
+        ]);
+
+        $service = Mockery::mock(AlumnoExternoService::class);
+        $service->shouldReceive('autenticarConsultor')
+            ->once()
+            ->with('1234567', 'pin-incorrecto', Mockery::any())
+            ->andReturnNull();
+        $service->shouldNotReceive('resolverAlumno');
+
+        $this->app->instance(AlumnoExternoService::class, $service);
+        $this->actingAs($oauthUser);
+
+        Volt::test('pages.auth.link-documento')
+            ->set('documento', '1234567')
+            ->set('pin', 'pin-incorrecto')
+            ->call('linkDocumento')
+            ->assertHasErrors(['pin']);
+
+        $existingStudent->refresh();
+
+        $this->assertNull($existingStudent->auth_provider);
+        $this->assertSame('alumno-1234567@consultor.invalid', $existingStudent->email);
+        $this->assertNotNull($oauthUser->fresh());
+        $this->assertNull($oauthUser->fresh()->documento);
+    }
+
+    public function test_link_documento_requires_pin(): void
+    {
+        /** @var User $oauthUser */
+        $oauthUser = User::factory()->create([
+            'documento' => null,
+            'password' => null,
+            'auth_provider' => 'google',
+            'auth_provider_id' => 'google-999',
+        ]);
+
+        $service = Mockery::mock(AlumnoExternoService::class);
+        $service->shouldNotReceive('autenticarConsultor');
+        $service->shouldNotReceive('resolverAlumno');
+
+        $this->app->instance(AlumnoExternoService::class, $service);
+        $this->actingAs($oauthUser);
+
+        Volt::test('pages.auth.link-documento')
+            ->set('documento', '1234567')
+            ->set('pin', '')
+            ->call('linkDocumento')
+            ->assertHasErrors(['pin' => 'required']);
     }
 
     protected function fakeGoogleUser(string $id, string $name, string $email, string $avatar): SocialiteUser

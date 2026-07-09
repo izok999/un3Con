@@ -2,8 +2,10 @@
 
 use App\Models\User;
 use App\Services\AlumnoExternoService;
+use Illuminate\Auth\Events\Lockout;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -14,6 +16,8 @@ use Spatie\Permission\Models\Role;
 new #[Layout('layouts.app')] class extends Component
 {
     public string $documento = '';
+
+    public string $pin = '';
 
     public function mount(): void
     {
@@ -34,6 +38,7 @@ new #[Layout('layouts.app')] class extends Component
     {
         $validated = $this->validate([
             'documento' => ['required', 'string', 'max:20'],
+            'pin' => ['required', 'string', 'max:50'],
         ]);
 
         $documento = $this->normalizeDocumento($validated['documento']);
@@ -44,9 +49,31 @@ new #[Layout('layouts.app')] class extends Component
             ]);
         }
 
+        $this->ensureIsNotRateLimited($documento);
+
+        try {
+            $legacyUser = $service->autenticarConsultor($documento, trim($this->pin), request()->ip());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            throw ValidationException::withMessages([
+                'documento' => 'No se pudo validar la cédula en este momento.',
+            ]);
+        }
+
+        if (! $legacyUser) {
+            RateLimiter::hit($this->throttleKey($documento));
+
+            throw ValidationException::withMessages([
+                'pin' => 'La cédula o el PIN del consultor anterior no son válidos.',
+            ]);
+        }
+
+        RateLimiter::clear($this->throttleKey($documento));
+
         try {
             $alumno = $service->resolverAlumno($documento);
-        } catch (\Throwable $exception) {
+        } catch (Throwable $exception) {
             report($exception);
 
             throw ValidationException::withMessages([
@@ -205,6 +232,29 @@ new #[Layout('layouts.app')] class extends Component
         return Str::endsWith(Str::lower($email), '@consultor.invalid');
     }
 
+    protected function ensureIsNotRateLimited(string $documento): void
+    {
+        if (! RateLimiter::tooManyAttempts($this->throttleKey($documento), 5)) {
+            return;
+        }
+
+        event(new Lockout(request()));
+
+        $seconds = RateLimiter::availableIn($this->throttleKey($documento));
+
+        throw ValidationException::withMessages([
+            'pin' => trans('auth.throttle', [
+                'seconds' => $seconds,
+                'minutes' => ceil($seconds / 60),
+            ]),
+        ]);
+    }
+
+    protected function throttleKey(string $documento): string
+    {
+        return Str::transliterate('link-documento|'.Str::lower($documento).'|'.request()->ip());
+    }
+
     protected function normalizeDocumento(string $documento): string
     {
         $normalizedDocumento = preg_replace('/\D+/', '', trim($documento));
@@ -223,7 +273,7 @@ new #[Layout('layouts.app')] class extends Component
 }; ?>
 
 <div class="mx-auto max-w-xl space-y-6">
-    <x-mary-header title="Vincular cuenta de alumno" subtitle="Necesitamos tu cédula para enlazar el acceso con Google a tu perfil académico." separator />
+    <x-mary-header title="Vincular cuenta de alumno" subtitle="Necesitamos tu cédula y tu PIN del consultor anterior para enlazar el acceso con Google a tu perfil académico." separator />
 
     <x-mary-card shadow class="border border-base-300">
         <div class="space-y-4">
@@ -251,13 +301,30 @@ new #[Layout('layouts.app')] class extends Component
                     <x-input-error :messages="$errors->get('documento')" class="mt-2" />
                 </div>
 
+                <div class="form-control w-full">
+                    <label class="label" for="pin">
+                        <span class="label-text font-medium">PIN del consultor anterior</span>
+                    </label>
+
+                    <input
+                        wire:model="pin"
+                        id="pin"
+                        type="password"
+                        class="input input-bordered w-full"
+                        autocomplete="off"
+                        required
+                    />
+
+                    <x-input-error :messages="$errors->get('pin')" class="mt-2" />
+                </div>
+
                 <button type="submit" class="btn btn-primary w-full">
                     Vincular cuenta y continuar
                 </button>
             </form>
 
             <p class="text-xs text-base-content/60">
-                Si ya usabas el consultor anterior o tu usuario fue sincronizado previamente, esta acción va a enlazar tu acceso con Google a ese mismo registro local.
+                El PIN es el mismo que usás para entrar al consultor académico anterior. Lo pedimos para confirmar que la cédula te pertenece antes de enlazarla con tu cuenta de Google.
             </p>
         </div>
     </x-mary-card>
