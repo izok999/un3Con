@@ -38,6 +38,8 @@ new #[Layout('layouts.app')] class extends Component
 ?>
 
 <div>
+    <x-slot name="header">Mis Carreras</x-slot>
+
     <x-mary-header title="Mis Carreras" subtitle="Habilitaciones vigentes" icon="o-building-library" separator />
 
     @if($error !== '')

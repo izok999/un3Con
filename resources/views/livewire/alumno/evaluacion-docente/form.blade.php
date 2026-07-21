@@ -236,6 +236,8 @@ new #[Layout('layouts.app')] class extends Component
         wire:init="cargarDatos"
     @endif
 >
+    <x-slot name="header">Evaluación Docente</x-slot>
+
     <div>
         <a href="{{ route('alumno.evaluacion-docente') }}" class="inline-flex items-center gap-1.5 text-sm text-base-content/55 transition hover:text-primary" wire:navigate>
             <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">

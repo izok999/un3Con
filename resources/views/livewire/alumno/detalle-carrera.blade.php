@@ -38,6 +38,8 @@ new #[Layout('layouts.app')] class extends Component
 }; ?>
 
 <div>
+    <x-slot name="header">{{ $carrera->pac_descri ?? 'Detalle de Carrera' }}</x-slot>
+
     {{-- Breadcrumb / back --}}
     <div class="mb-4">
         <a href="{{ route('alumno.carreras') }}" wire:navigate class="inline-flex items-center gap-1.5 text-sm text-base-content/55 transition hover:text-primary">

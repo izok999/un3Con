@@ -1,9 +1,9 @@
 <?php
 
-use App\Models\Docente;
 use App\Models\EvaluacionDocente;
 use App\Models\PeriodoEvaluacion;
 use App\Services\AlumnoExternoService;
+use App\Services\EvaluacionDocente\DocentesElegiblesResolver;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
@@ -35,7 +35,7 @@ new #[Lazy] class extends Component
         ];
     }
 
-    public function mount(AlumnoExternoService $service): void
+    public function mount(AlumnoExternoService $service, DocentesElegiblesResolver $resolver): void
     {
         $user = request()->user();
 
@@ -48,15 +48,23 @@ new #[Lazy] class extends Component
             $periodoActivo = PeriodoEvaluacion::query()->where('activo', true)->first();
 
             if ($periodoActivo) {
-                $totalDocentes = Docente::where('activo', true)->count();
-                $yaEvaluados = EvaluacionDocente::query()
+                // Los docentes elegibles son solo los que dictan materias en las
+                // que el alumno está efectivamente inscripto (ver DocentesElegiblesResolver),
+                // no todos los docentes activos de la unidad académica.
+                $contextoIdsElegibles = $resolver->paraAlumno($user, $periodoActivo)
+                    ->pluck('contexto.id')
+                    ->filter()
+                    ->unique();
+
+                $contextoIdsEvaluados = EvaluacionDocente::query()
                     ->where('periodo_evaluacion_id', $periodoActivo->id)
                     ->where('evaluador_user_id', $user->id)
-                    ->pluck('docente_id')
-                    ->unique()
-                    ->count();
+                    ->whereNotNull('docente_contexto_id')
+                    ->pluck('docente_contexto_id')
+                    ->map(fn (mixed $id): int => (int) $id)
+                    ->unique();
 
-                $this->pendingCount = $totalDocentes - $yaEvaluados;
+                $this->pendingCount = $contextoIdsElegibles->diff($contextoIdsEvaluados)->count();
 
                 if ($this->pendingCount > 0) {
                     $this->showPendingToast = true;

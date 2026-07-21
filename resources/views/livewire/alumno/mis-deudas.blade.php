@@ -187,6 +187,8 @@ new #[Layout('layouts.app')] class extends Component
 ?>
 
 <div>
+    <x-slot name="header">Mis Deudas</x-slot>
+
     <x-mary-header title="Mis Deudas" subtitle="Estado financiero con deudas activas, pagos legacy e historial cronológico" icon="o-currency-dollar" separator />
 
     @if($error !== '')
