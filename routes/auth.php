@@ -7,7 +7,14 @@ use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
 Route::middleware('guest')->group(function () {
-    Volt::route('register', 'pages.auth.register')
+    // Registro público deshabilitado: crear una cuenta declarando una cédula no
+    // probaba que el documento fuera propio, así que el alta de alumnos ocurre en
+    // el login con cédula + PIN, el único punto que verifica la pertenencia contra
+    // la base académica. La ruta se conserva para que los enlaces viejos caigan en
+    // el login con la explicación en vez de dar 404.
+    Route::get('register', fn () => redirect()
+        ->route('login')
+        ->with('status', __('No hace falta crear una cuenta: para tu primer ingreso usá tu cédula y el PIN del consultor anterior.')))
         ->name('register');
 
     Volt::route('login', 'pages.auth.login')

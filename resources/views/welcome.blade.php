@@ -53,9 +53,6 @@
                     <a href="{{ url('/dashboard') }}" class="btn btn-ghost btn-sm">Dashboard</a>
                 @else
                     <a href="{{ route('login') }}" class="btn btn-ghost btn-sm">Iniciar sesión</a>
-                    @if (Route::has('register'))
-                        <a href="{{ route('register') }}" class="btn btn-secondary btn-sm ml-2">Registrarse</a>
-                    @endif
                 @endauth
             </div>
         </div>
@@ -83,12 +80,11 @@
                                 <svg class="w-5 h-5 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" /></svg>
                                 Iniciar sesión
                             </a>
-                            @if (Route::has('register'))
-                                <a href="{{ route('register') }}" class="btn btn-outline btn-primary btn-lg">
-                                    Crear cuenta
-                                </a>
-                            @endif
                         </div>
+
+                        <p class="mt-4 text-sm text-base-content/60">
+                            Si es tu primer ingreso, entrá con tu cédula y el PIN del consultor anterior.
+                        </p>
                     @else
                         <a href="{{ url('/dashboard') }}" class="btn btn-primary btn-lg">
                             Ir al Dashboard

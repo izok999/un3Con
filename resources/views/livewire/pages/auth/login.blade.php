@@ -169,7 +169,6 @@ new #[Layout('layouts.guest')] class extends Component
     </p>
 
     <p class="text-center text-base font-semibold mt-4 text-base-content/60">
-        {{ __('¿No tenés cuenta?') }}
-        <a href="{{ route('register') }}" class="text-primary hover:underline" wire:navigate>{{ __('Registrate') }}</a>
+        {{ __('¿Es tu primer ingreso? Usá tu cédula y el PIN del consultor anterior: la cuenta se crea sola y después definís tu correo y contraseña.') }}
     </p>
 </div>
