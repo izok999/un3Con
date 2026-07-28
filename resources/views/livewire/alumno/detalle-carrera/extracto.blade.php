@@ -11,6 +11,10 @@ new #[Lazy] class extends Component
     public int $halId = 0;
     public Collection $extracto;
 
+    public int $aplazos = 0;
+    public ?int $limiteAplazos = null;
+    public ?float $porcentajeAplazos = null;
+
     public function boot(): void
     {
         $this->extracto = collect();
@@ -21,6 +25,46 @@ new #[Lazy] class extends Component
         $this->aluId = $aluId;
         $this->halId = $halId;
         $this->extracto = $service->extractoImpresionPorHabilitacion($aluId, $halId);
+
+        // Se resuelve después del extracto para que reutilice su caché en vez de repetir la consulta.
+        $aplazos = $service->aplazosPorHabilitacion($aluId, $halId);
+
+        $this->aplazos = $aplazos['aplazos'];
+        $this->limiteAplazos = $aplazos['limite'];
+        $this->porcentajeAplazos = $aplazos['porcentaje'];
+    }
+
+    /**
+     * El legacy solo bloquea cuando los aplazos superan el tope (sp_get_verifica_limite_aplazos
+     * compara con >), así que estar justo en el límite todavía no es infracción.
+     */
+    public function superaElTopeDeAplazos(): bool
+    {
+        return $this->limiteAplazos !== null && $this->aplazos > $this->limiteAplazos;
+    }
+
+    /**
+     * Color del indicador según cuánto del tope de aplazos ya se consumió.
+     * Las clases se escriben completas para que Tailwind las detecte al compilar.
+     */
+    public function claseTextoAplazos(): string
+    {
+        return match (true) {
+            $this->porcentajeAplazos === null => 'text-base-content',
+            $this->superaElTopeDeAplazos() => 'text-error',
+            $this->porcentajeAplazos >= 75 => 'text-warning',
+            default => 'text-success',
+        };
+    }
+
+    public function claseProgresoAplazos(): string
+    {
+        return match (true) {
+            $this->porcentajeAplazos === null => 'progress-neutral',
+            $this->superaElTopeDeAplazos() => 'progress-error',
+            $this->porcentajeAplazos >= 75 => 'progress-warning',
+            default => 'progress-success',
+        };
     }
 
     public function placeholder(): string
@@ -30,6 +74,48 @@ new #[Lazy] class extends Component
 }; ?>
 
 <div class="space-y-3">
+<div class="card glass-card">
+    <div class="card-body">
+        <h2 class="mb-1 text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Situación de aplazos</h2>
+        <h3 class="card-title text-base text-base-content">Aplazos acumulados en la carrera</h3>
+
+        <div class="mt-3 grid gap-4 sm:grid-cols-3">
+            <div class="rounded-2xl bg-base-200/70 p-3">
+                <p class="text-xs uppercase tracking-[0.2em] text-base-content/50">Aplazos</p>
+                <p class="mt-1 text-2xl font-semibold {{ $this->claseTextoAplazos() }}">{{ $aplazos }}</p>
+            </div>
+            <div class="rounded-2xl bg-base-200/70 p-3">
+                <p class="text-xs uppercase tracking-[0.2em] text-base-content/50">Tope de la malla</p>
+                <p class="mt-1 text-2xl font-semibold text-base-content">{{ $limiteAplazos ?? '—' }}</p>
+            </div>
+            <div class="rounded-2xl bg-base-200/70 p-3">
+                <p class="text-xs uppercase tracking-[0.2em] text-base-content/50">Tope consumido</p>
+                <p class="mt-1 text-2xl font-semibold {{ $this->claseTextoAplazos() }}">
+                    {{ $porcentajeAplazos !== null ? number_format($porcentajeAplazos, 1, ',', '.').'%' : '—' }}
+                </p>
+            </div>
+        </div>
+
+        @if($porcentajeAplazos !== null)
+            <progress
+                class="progress {{ $this->claseProgresoAplazos() }} mt-3 w-full"
+                value="{{ min($porcentajeAplazos, 100) }}"
+                max="100"
+            ></progress>
+
+            @if($this->superaElTopeDeAplazos())
+                <x-mary-alert title="Superaste el tope de aplazos permitido por tu malla curricular. Acercate a Secretaría." icon="o-exclamation-triangle" class="alert-error mt-2" />
+            @elseif($aplazos === $limiteAplazos)
+                <x-mary-alert title="Alcanzaste el tope de aplazos de tu malla curricular. Un aplazo más te deja fuera de plazo." icon="o-exclamation-triangle" class="alert-warning mt-2" />
+            @endif
+        @else
+            <p class="mt-3 text-sm text-base-content/60">
+                El tope de aplazos de la malla no está disponible para esta carrera.
+            </p>
+        @endif
+    </div>
+</div>
+
 <div class="card glass-card">
     <div class="card-body">
         <h2 class="mb-1 text-xs font-semibold uppercase tracking-[0.24em] text-base-content/45">Progreso de la carrera</h2>

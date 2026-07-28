@@ -299,19 +299,60 @@ class AlumnoExternoService
     }
 
     /**
-     * Extracto académico completo (calificaciones históricas).
+     * Extracto académico completo del alumno (calificaciones históricas).
+     *
+     * sh_academico.vw_extracto_academico_11 no expone ninguna columna de alumno, así que
+     * se la consulta por las habilitaciones del alumno. vw_alumnos_habilitacion_22 —la
+     * misma fuente que carreras(), ya cacheada— es superconjunto de las habilitaciones
+     * con calificaciones, verificado contra la vista lenta en alumnos de hasta 16
+     * habilitaciones: mismas filas, de ~70 s a ~1 s.
+     *
+     * Sin habilitaciones conocidas se cae a la vista lenta por alumno, que no depende de
+     * ese listado.
      */
     public function extractoAcademico(int $aluId): Collection
     {
+        $halIds = $this->carreras($aluId)
+            ->map(fn (stdClass $carrera): ?int => isset($carrera->hal_id) ? (int) $carrera->hal_id : null)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($halIds === []) {
+            return $this->queryExtractoCompletoPorAlumno($aluId);
+        }
+
+        try {
+            return $this->queryExtractoPorHabilitaciones($halIds);
+        } catch (QueryException) {
+            return $this->queryExtractoCompletoPorAlumno($aluId);
+        }
+    }
+
+    /**
+     * @param  array<int, int>  $halIds
+     */
+    protected function queryExtractoPorHabilitaciones(array $halIds): Collection
+    {
         return $this->query()
-            ->table('sh_movimientos.vw_extracto_academico_01')/* vw_extracto_academico_11 finalmente se usa la función sh_movimientos.fn_busca_alumnos_habilitacion_extracto */
+            ->table('sh_academico.vw_extracto_academico_11')
+            ->whereIn('hal_id', $halIds)
+            ->orderBy('act_fecha', 'desc')
+            ->get();
+    }
+
+    protected function queryExtractoCompletoPorAlumno(int $aluId): Collection
+    {
+        return $this->query()
+            ->table('sh_movimientos.vw_extracto_academico_01')
             ->where('aci_idalu', $aluId)
             ->orderBy('act_fecha', 'desc')
             ->get();
     }
 
     /**
-     * Extracto académico filtrado por la habilitación actual cuando la vista expone ese campo.
+     * Extracto académico de una habilitación.
      */
     public function extractoPorHabilitacion(int $aluId, int $halId): Collection
     {
@@ -326,72 +367,89 @@ class AlumnoExternoService
         }
     }
 
+    /**
+     * sh_academico.vw_extracto_academico_11 devuelve exactamente las mismas filas que
+     * sh_movimientos.vw_extracto_academico_01 filtrada por hal_id, pero en ~100 ms en vez
+     * de ~50 segundos. Se la nombra con esquema porque sh_academico no está en el
+     * search_path de la conexión.
+     *
+     * El $aluId no participa del filtro: la vista solo expone hal_id, y el hal_id ya se
+     * resuelve a partir de las habilitaciones del propio alumno.
+     */
     protected function queryExtractoPorHabilitacion(int $aluId, int $halId): Collection
     {
         return $this->query()
-            ->table('sh_movimientos.vw_extracto_academico_01')
-            ->where('aci_idalu', $aluId)
-            ->where('aci_idhal', $halId)
+            ->table('sh_academico.vw_extracto_academico_11')
+            ->where('hal_id', $halId)
             ->orderBy('act_fecha', 'desc')
             ->get();
     }
 
     /**
-     * Extracto acqadémico agrupado por curso, usando la función legacy del sistema.
+     * Extracto de una habilitación, cacheado para las vistas que lo consultan más de una vez.
      *
-     * Parámetros fijos: 0 (segunda posición) y 1 (tercera posición).
-     * - cur_print:    indica que se puede imprimir el nombre del semestre/curso (cur_descri).
-     * - cur_completo: indica que el alumno completó ese curso o año.
-     *
-     * Ejemplo SQL: SELECT * FROM sh_academico.fn_busca_alumnos_habilitacion_extracto(alu_id, 0, 1);
-     */
-    public function extractoImpresion(int $aluId): Collection
-    {
-        try {
-            return $this->queryExtractoPorFuncion($aluId);
-        } catch (QueryException) {
-            return $this->extractoAcademico($aluId);
-        }
-    }
-
-    /**
-     * Extracto académico agrupado por curso filtrado por habilitación, usando la función legacy.
-     *
-     * Pasa el hal_id como segundo parámetro para restringir el resultado a una sola habilitación.
-     *
-     * Ejemplo SQL: SELECT * FROM sh_academico.fn_busca_alumnos_habilitacion_extracto(alu_id, hal_id, 1);
+     * No usa sh_academico.fn_busca_alumnos_habilitacion_extracto: esa función recibe hal_id
+     * como primer parámetro (no alu_id) y además no expone tev_descri, que la vista sí trae.
      */
     public function extractoImpresionPorHabilitacion(int $aluId, int $halId): Collection
     {
         $data = Cache::remember("extracto_impresion_{$aluId}_{$halId}", 900, function () use ($aluId, $halId): array {
-            try {
-                return $this->queryExtractoPorFuncionYHabilitacion($aluId, $halId)
-                    ->map(fn ($row) => (array) $row)
-                    ->all();
-            } catch (QueryException) {
-                return $this->extractoPorHabilitacion($aluId, $halId)
-                    ->map(fn ($row) => (array) $row)
-                    ->all();
-            }
+            return $this->extractoPorHabilitacion($aluId, $halId)
+                ->map(fn ($row) => (array) $row)
+                ->all();
         });
 
         return collect($data)->map(fn (array $row) => (object) $row)->values();
     }
 
-    protected function queryExtractoPorFuncion(int $aluId): Collection
+    /**
+     * Aplazos acumulados en la habilitación y su relación con el tope de la malla.
+     *
+     * Replica la definición legacy de sh_movimientos.vw_alumnos_aplazos_01: cada ítem
+     * de acta y cada convalidación cuya calificación tiene cal_situac = 2 (nota UNO),
+     * restringido a las materias de la malla del alumno. El extracto aplica esos mismos
+     * joins, así que el conteo sale de él y reutiliza su caché en vez de repetir la consulta.
+     *
+     * El tope (mcu_aplazo) sale de la malla de la habilitación y es el mismo valor que
+     * usa sh_movimientos.sp_get_verifica_limite_aplazos para bloquear al alumno. Si la
+     * cuenta de solo lectura no tiene permiso sobre esa columna, el porcentaje queda en
+     * null y la vista muestra únicamente la cantidad.
+     *
+     * @return array{aplazos: int, limite: int|null, porcentaje: float|null}
+     */
+    public function aplazosPorHabilitacion(int $aluId, int $halId): array
     {
-        return collect($this->query()->select(
-            'SELECT * FROM sh_academico.fn_busca_alumnos_habilitacion_extracto(?, ?, ?)',
-            [$aluId, 0, 1],
-        ));
+        $aplazos = $this->extractoImpresionPorHabilitacion($aluId, $halId)
+            ->filter(fn (stdClass $registro): bool => (int) ($registro->cal_situac ?? 0) === 2)
+            ->count();
+
+        $limite = $this->limiteAplazosPorHabilitacion($halId);
+
+        return [
+            'aplazos' => $aplazos,
+            'limite' => $limite,
+            'porcentaje' => $limite > 0 ? round($aplazos * 100 / $limite, 1) : null,
+        ];
     }
 
-    protected function queryExtractoPorFuncionYHabilitacion(int $aluId, int $halId): Collection
+    /**
+     * Tope de aplazos que admite la malla curricular de la habilitación (mcu_aplazo).
+     */
+    protected function limiteAplazosPorHabilitacion(int $halId): ?int
     {
-        return collect($this->query()->select(
-            'SELECT * FROM sh_academico.fn_busca_alumnos_habilitacion_extracto(?, ?, ?)',
-            [$aluId, $halId, 1],
-        ));
+        return Cache::remember("limite_aplazos_{$halId}", 3600, function () use ($halId): ?int {
+            try {
+                $limite = $this->query()
+                    ->table('sh_movimientos.vw_habilitacion_alumnos_mallas_11 as habilitacion')
+                    ->join('sh_maestros.vw_malla_curricular_06 as malla', 'malla.mcu_id', '=', 'habilitacion.ham_idmcu')
+                    ->where('habilitacion.hal_id', $halId)
+                    ->value('malla.mcu_aplazo');
+            } catch (QueryException) {
+                return null;
+            }
+
+            return $limite === null ? null : (int) $limite;
+        });
     }
 
     /**

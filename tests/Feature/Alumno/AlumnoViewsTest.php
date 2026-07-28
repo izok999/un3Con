@@ -482,6 +482,11 @@ class AlumnoViewsTest extends TestCase
         $service->shouldReceive('carreras')->once()->with(42178)->andReturn(new Collection([$carrera]));
         $service->shouldReceive('materiasPorHabilitacion')->with(42178, 58655, 971)->andReturn(new Collection([$materia]));
         $service->shouldReceive('extractoImpresionPorHabilitacion')->with(42178, 58655)->andReturn(new Collection([$extracto]));
+        $service->shouldReceive('aplazosPorHabilitacion')->with(42178, 58655)->andReturn([
+            'aplazos' => 3,
+            'limite' => 15,
+            'porcentaje' => 20.0,
+        ]);
         $service->shouldReceive('deudasPorHabilitacion')->with(42178, 971, 20261)->andReturn(new Collection([$deuda]));
         $service->shouldReceive('pagosAlumno')->with(42178)->andReturn(new Collection([$pago]));
         $service->shouldReceive('asistenciaPorHabilitacion')->with(42178, 971, 20261)->andReturn(new Collection([$asistencia]));
