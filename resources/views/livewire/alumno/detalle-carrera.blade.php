@@ -56,7 +56,7 @@ new #[Layout('layouts.app')] class extends Component
         <div class="space-y-6">
 
             {{-- Hero card: disponible de inmediato desde mount() (viene del cache de carreras) --}}
-            <div class="relative overflow-hidden rounded-[1.75rem] border border-primary/15 bg-base-100/85 p-6 shadow-sm">
+            <div class="card glass-card overflow-hidden p-6">
                 <div class="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary via-secondary to-accent"></div>
 
                 <div class="space-y-2">

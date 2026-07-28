@@ -3,9 +3,9 @@
 @if($halId)
     <a href="{{ route('alumno.carreras.show', ['halId' => $halId]) }}"
        wire:navigate
-       class="group relative block overflow-hidden rounded-[1.75rem] border border-primary/15 bg-base-100/85 p-5 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-primary/40 hover:shadow-xl">
+       class="group card glass-card overflow-hidden p-5">
 @else
-    <div class="relative block overflow-hidden rounded-[1.75rem] border border-primary/15 bg-base-100/85 p-5 shadow-sm">
+    <div class="card glass-card overflow-hidden p-5">
 @endif
 
     <div class="absolute inset-x-0 top-0 h-1 bg-linear-to-r from-primary via-secondary to-accent"></div>
