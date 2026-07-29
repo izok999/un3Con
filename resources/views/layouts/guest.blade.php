@@ -58,7 +58,7 @@
             </div>
 
             {{-- Card del formulario --}}
-            <div class="w-full sm:max-w-md px-5 py-6 sm:py-5 overflow-hidden relative rounded-[1.5rem] bg-white/[0.04] border border-white/[0.14]" style="z-index:1;">
+            <div class="glass-card w-full sm:max-w-md px-5 py-6 sm:py-5 overflow-hidden relative" style="z-index:1;">
                 {{ $slot }}
             </div>
         </div>

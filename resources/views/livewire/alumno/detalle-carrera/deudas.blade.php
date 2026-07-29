@@ -11,6 +11,13 @@ new #[Lazy] class extends Component
     public int $aluId = 0;
     public int $rscId = 0;
     public int $periodoId = 0;
+
+    /** @var array<int, string> Periodos con deudas en esta carrera: [ple_id => etiqueta]. */
+    public array $periodos = [];
+
+    /** '' consulta todos los periodos; un ple_id acota a ese periodo (incluye pasados). */
+    public string $periodoSeleccionado = '';
+
     public Collection $deudas;
     public Collection $pagos;
     public Collection $timeline;
@@ -28,11 +35,31 @@ new #[Lazy] class extends Component
         $this->rscId = $rscId;
         $this->periodoId = $periodoId;
 
+        $this->periodos = $service->periodosConDeudas($aluId, $rscId);
+
+        // Arranca en el periodo vigente cuando tiene deudas; si no, muestra todos
+        // para no esconder saldos viejos detrás de un periodo vacío.
+        $this->periodoSeleccionado = array_key_exists($periodoId, $this->periodos)
+            ? (string) $periodoId
+            : '';
+
+        $this->cargarMovimientos($service);
+    }
+
+    public function updatedPeriodoSeleccionado(): void
+    {
+        $this->cargarMovimientos(app(AlumnoExternoService::class));
+    }
+
+    protected function cargarMovimientos(AlumnoExternoService $service): void
+    {
+        $periodo = $this->periodoSeleccionado === '' ? null : (int) $this->periodoSeleccionado;
+
         $this->deudas = $this->prepareDeudas(
-            $service->deudasPorHabilitacion($aluId, $rscId, $periodoId),
+            $service->deudasPorHabilitacion($this->aluId, $this->rscId, $periodo),
         );
 
-        $this->pagos = $this->preparePagos($service->pagosAlumno($aluId));
+        $this->pagos = $this->preparePagos($service->pagosAlumno($this->aluId));
         $this->timeline = $this->buildTimeline($this->deudas, $this->pagos);
     }
 
@@ -162,18 +189,36 @@ new #[Lazy] class extends Component
                 <h3 class="card-title text-base text-base-content">Estado de cuenta</h3>
             </div>
 
-            <div class="flex flex-wrap gap-2 text-xs">
+            <div class="flex flex-wrap items-center gap-2 text-xs">
                 <span class="badge badge-warning badge-sm">{{ $deudas->count() }} deudas de esta carrera</span>
                 <span class="badge badge-success badge-sm">{{ $pagos->count() }} pagos legacy del alumno</span>
+
+                @if(count($periodos) > 0)
+                    <select
+                        wire:model.live="periodoSeleccionado"
+                        class="select select-bordered select-xs"
+                        aria-label="Periodo lectivo de las deudas"
+                        data-testid="deudas-periodo-select"
+                    >
+                        <option value="">Todos los periodos</option>
+                        @foreach($periodos as $pleId => $etiqueta)
+                            <option value="{{ $pleId }}">{{ $etiqueta }}</option>
+                        @endforeach
+                    </select>
+                @endif
             </div>
         </div>
 
         <p class="mt-2 text-xs text-base-content/60">
-            Las deudas se filtran por esta carrera. Los pagos vienen del historial general legado del alumno.
+            Las deudas se filtran por esta carrera y el periodo elegido. Los pagos vienen del historial general legado del alumno.
         </p>
 
         @if($timeline->isEmpty())
-            <x-mary-alert title="No hay movimientos financieros visibles para esta carrera." icon="o-check-circle" class="alert-success mt-2" />
+            @if($periodoSeleccionado !== '' && count($periodos) > 0)
+                <x-mary-alert title="Sin movimientos en el periodo seleccionado. Hay deudas registradas en otros periodos: elegí uno en el selector." icon="o-information-circle" class="alert-info mt-2" />
+            @else
+                <x-mary-alert title="No hay movimientos financieros visibles para esta carrera." icon="o-check-circle" class="alert-success mt-2" />
+            @endif
         @else
             <div class="mt-2 overflow-x-auto">
                 <table class="table table-sm">

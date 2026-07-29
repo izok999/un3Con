@@ -433,6 +433,27 @@ class AlumnoExternoService
     }
 
     /**
+     * Promedio general de la habilitación según el legacy (hal_promed de
+     * vw_acta_calificaciones_promedios_02). Coincide con el promedio de las
+     * calificaciones numéricas del extracto.
+     */
+    public function promedioPorHabilitacion(int $halId): ?float
+    {
+        return Cache::remember("promedio_hal_{$halId}", 1800, function () use ($halId): ?float {
+            try {
+                $promedio = $this->query()
+                    ->table('sh_movimientos.vw_acta_calificaciones_promedios_02')
+                    ->where('hal_id', $halId)
+                    ->value('hal_promed');
+            } catch (QueryException) {
+                return null;
+            }
+
+            return $promedio === null ? null : (float) $promedio;
+        });
+    }
+
+    /**
      * Tope de aplazos que admite la malla curricular de la habilitación (mcu_aplazo).
      */
     protected function limiteAplazosPorHabilitacion(int $halId): ?int
@@ -549,7 +570,7 @@ class AlumnoExternoService
     }
 
     /**
-     * Deudas asociadas a una habilitación, cuando la vista expone recurso o periodo.
+     * Deudas asociadas a una habilitación, opcionalmente acotadas a un periodo lectivo.
      */
     public function deudasPorHabilitacion(int $aluId, int $rscId, ?int $periodoId = null): Collection
     {
@@ -566,7 +587,7 @@ class AlumnoExternoService
                 $deudas = $this->filterByFirstAvailableField(
                     $deudas,
                     $periodoId,
-                    ['dit_idple', 'deu_idple', 'ple_id', 'hal_idple'],
+                    ['inm_idple', 'dit_idple', 'deu_idple', 'ple_id', 'hal_idple'],
                 );
             }
 
@@ -574,6 +595,10 @@ class AlumnoExternoService
         }
     }
 
+    /**
+     * En vw_alumnos_deudas_saldos_12 la columna de periodo es inm_idple (la de la
+     * inscripción que originó la deuda); deu_idple no existe en esa vista.
+     */
     protected function queryDeudasPorHabilitacion(int $aluId, int $rscId, ?int $periodoId = null): Collection
     {
         return $this->query()
@@ -581,10 +606,34 @@ class AlumnoExternoService
             ->where('deu_idalu', $aluId)
             ->where('deu_idrsc', $rscId)
             ->when($periodoId !== null, function ($query) use ($periodoId) {
-                $query->where('deu_idple', $periodoId);
+                $query->where('inm_idple', $periodoId);
             })
             ->orderBy('dit_vencim', 'desc')
             ->get();
+    }
+
+    /**
+     * Periodos lectivos con deudas registradas para la carrera, más recientes primero:
+     * [ple_id => 'ple_codigo — ple_descri']. Alimenta el selector de periodo del estado
+     * de cuenta, para consultar también periodos pasados.
+     *
+     * @return array<int, string>
+     */
+    public function periodosConDeudas(int $aluId, int $rscId): array
+    {
+        return $this->query()
+            ->table('sh_movimientos.vw_alumnos_deudas_saldos_12')
+            ->select(['inm_idple', 'ple_codigo', 'ple_descri'])
+            ->where('deu_idalu', $aluId)
+            ->where('deu_idrsc', $rscId)
+            ->whereNotNull('inm_idple')
+            ->distinct()
+            ->orderByDesc('ple_codigo')
+            ->get()
+            ->mapWithKeys(fn ($row) => [
+                (int) $row->inm_idple => trim((string) $row->ple_codigo).' — '.trim((string) $row->ple_descri),
+            ])
+            ->all();
     }
 
     /**

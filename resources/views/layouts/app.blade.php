@@ -86,6 +86,40 @@
                     'route' => 'alumno.deudas',
                     'active' => ['alumno.deudas'],
                 ],
+                'admin_dashboard' => [
+                    'title' => 'Dashboard Admin',
+                    'mobile_title' => 'Dashboard',
+                    'icon' => 'o-chart-bar',
+                    'route' => 'admin.dashboard',
+                    'active' => ['admin.dashboard'],
+                ],
+                'admin_consulta' => [
+                    'title' => 'Consulta Alumnos',
+                    'mobile_title' => 'Consulta',
+                    'icon' => 'o-magnifying-glass',
+                    'route' => 'admin.consulta-alumno',
+                    'active' => ['admin.consulta-alumno'],
+                ],
+                'admin_docentes' => [
+                    'title' => 'Docentes',
+                    'mobile_title' => 'Docentes',
+                    'icon' => 'o-clipboard-document-list',
+                    'route' => 'admin.evaluacion-docente.docentes',
+                    'active' => ['admin.evaluacion-docente.docentes'],
+                ],
+                'normativas' => [
+                    'title' => 'Normativas',
+                    'icon' => 'o-scale',
+                    'route' => 'normativas.index',
+                    'active' => ['normativas.index'],
+                ],
+                'perfil' => [
+                    'title' => 'Mi Perfil',
+                    'mobile_title' => 'Perfil',
+                    'icon' => 'o-user',
+                    'route' => 'profile',
+                    'active' => ['profile'],
+                ],
             ];
 
             $alumnoSidebarSections = [
@@ -101,7 +135,13 @@
                 ],
             ];
 
-            $alumnoMobileNavigation = ['home', 'carreras', 'materias', 'evaluacion_docente', 'deudas'];
+            if ($isAlumno) {
+                $mobileNavigation = ['home', 'carreras', 'evaluacion_docente', 'deudas'];
+            } elseif ($isAdmin) {
+                $mobileNavigation = ['home', 'admin_dashboard', 'admin_consulta', 'admin_docentes'];
+            } else {
+                $mobileNavigation = ['home', 'normativas', 'perfil'];
+            }
         @endphp
 
         <x-main full-width>
@@ -167,11 +207,6 @@
             <x-slot:content>
                 {{-- Topbar --}}
                 <div id="main-topbar" class="navbar glass-navbar sticky top-0 z-50 mb-4">
-                    @unless ($isAlumno)
-                        <label for="main-drawer" class="lg:hidden btn btn-ghost btn-sm">
-                            <x-icon name="o-bars-3" />
-                        </label>
-                    @endunless
                     <div class="flex-1">
                         <span class="text-lg font-semibold">{{ $header ?? '' }}</span>
                     </div>
@@ -217,7 +252,7 @@
                     data-route-shell
                     @class([
                         'route-transition-shell',
-                        'mobile-bottom-nav-offset' => $isAlumno,
+                        'mobile-bottom-nav-offset' => auth()->check(),
                     ])
                 >
                     {{ $slot }}
@@ -225,14 +260,18 @@
             </x-slot:content>
         </x-main>
 
-        @if ($isAlumno)
+        @auth
             <nav
-                data-testid="alumno-mobile-bottom-nav"
-                aria-label="Navegacion principal del alumno"
+                data-testid="mobile-bottom-nav"
+                aria-label="Navegacion principal"
                 class="mobile-bottom-nav glass-navbar fixed inset-x-4 z-60 lg:hidden"
             >
-                <div class="grid grid-cols-5 gap-1 p-2">
-                    @foreach ($alumnoMobileNavigation as $itemKey)
+                <div @class([
+                    'grid gap-1 p-2',
+                    'grid-cols-4' => count($mobileNavigation) === 3,
+                    'grid-cols-5' => count($mobileNavigation) === 4,
+                ])>
+                    @foreach ($mobileNavigation as $itemKey)
                         @php
                             $item = $navigationLinks[$itemKey];
                             $isActive = request()->routeIs(...$item['active']);
@@ -253,9 +292,19 @@
                             <span>{{ $item['mobile_title'] ?? $item['title'] }}</span>
                         </a>
                     @endforeach
+
+                    <label
+                        for="main-drawer"
+                        data-nav-context="mobile"
+                        data-route-link="mobile-menu"
+                        class="mobile-bottom-nav-link flex cursor-pointer flex-col items-center justify-center gap-1 px-2 py-2 text-center text-[0.68rem] font-semibold leading-tight transition text-base-content/70 hover:bg-base-100/60 hover:text-base-content"
+                    >
+                        <x-icon name="o-bars-3" class="h-5 w-5" />
+                        <span>Más</span>
+                    </label>
                 </div>
             </nav>
-        @endif
+        @endauth
 
         <x-toast />
     </body>

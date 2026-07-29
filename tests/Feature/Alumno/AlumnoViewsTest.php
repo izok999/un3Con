@@ -57,10 +57,12 @@ class AlumnoViewsTest extends TestCase
             ->assertOk()
             ->assertSee('data-route-shell', false)
             ->assertSee('route-transition-shell', false)
-            ->assertSee('data-testid="alumno-mobile-bottom-nav"', false)
-            ->assertSee('aria-label="Navegacion principal del alumno"', false)
+            ->assertSee('data-testid="mobile-bottom-nav"', false)
+            ->assertSee('aria-label="Navegacion principal"', false)
             ->assertSee('data-route-link="mobile-home"', false)
             ->assertSee('data-route-link="mobile-carreras"', false)
+            ->assertSee('data-route-link="mobile-menu"', false)
+            ->assertDontSee('data-route-link="mobile-materias"', false)
             ->assertSee('wire:navigate', false)
             ->assertSee('href="'.route('dashboard').'"', false)
             ->assertSee('href="'.route('alumno.carreras').'"', false)
@@ -68,11 +70,11 @@ class AlumnoViewsTest extends TestCase
             ->assertSee('href="'.route('alumno.deudas').'"', false)
             ->assertSeeText('Inicio')
             ->assertSeeText('Carreras')
-            ->assertSeeText('Materias')
-            ->assertSeeText('Pagos');
+            ->assertSeeText('Pagos')
+            ->assertSeeText('Más');
     }
 
-    public function test_admin_layout_does_not_render_alumno_mobile_bottom_navigation(): void
+    public function test_admin_layout_renders_admin_mobile_bottom_navigation(): void
     {
         /** @var User $user */
         $user = User::factory()->create();
@@ -84,7 +86,14 @@ class AlumnoViewsTest extends TestCase
 
         $this->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertDontSee('data-testid="alumno-mobile-bottom-nav"', false);
+            ->assertSee('data-testid="mobile-bottom-nav"', false)
+            ->assertSee('data-route-link="mobile-admin_dashboard"', false)
+            ->assertSee('data-route-link="mobile-admin_consulta"', false)
+            ->assertSee('data-route-link="mobile-admin_docentes"', false)
+            ->assertSee('data-route-link="mobile-menu"', false)
+            ->assertDontSee('data-route-link="mobile-carreras"', false)
+            ->assertSee('href="'.route('admin.consulta-alumno').'"', false)
+            ->assertSeeText('Más');
     }
 
     public function test_alumno_dashboard_renders_stagger_markup_for_glass_cards(): void
@@ -487,6 +496,8 @@ class AlumnoViewsTest extends TestCase
             'limite' => 15,
             'porcentaje' => 20.0,
         ]);
+        $service->shouldReceive('promedioPorHabilitacion')->with(58655)->andReturn(3.02);
+        $service->shouldReceive('periodosConDeudas')->with(42178, 971)->andReturn([20261 => '2026 — PERIODO LECTIVO 2026']);
         $service->shouldReceive('deudasPorHabilitacion')->with(42178, 971, 20261)->andReturn(new Collection([$deuda]));
         $service->shouldReceive('pagosAlumno')->with(42178)->andReturn(new Collection([$pago]));
         $service->shouldReceive('asistenciaPorHabilitacion')->with(42178, 971, 20261)->andReturn(new Collection([$asistencia]));
@@ -582,6 +593,7 @@ class AlumnoViewsTest extends TestCase
 
         $service = Mockery::mock(AlumnoExternoService::class);
         $service->shouldReceive('evaluaciones')->once()->with(58655)->andReturn(new Collection([$evaluacionAntigua, $evaluacionReciente]));
+        $service->shouldReceive('periodosConDeudas')->with(42178, 971)->andReturn([20261 => '2026 — PERIODO LECTIVO 2026']);
         $service->shouldReceive('deudasPorHabilitacion')->once()->with(42178, 971, 20261)->andReturn(new Collection([$deudaReciente, $deudaAntigua]));
         $service->shouldReceive('pagosAlumno')->once()->with(42178)->andReturn(new Collection([$pagoReciente, $pagoAntiguo]));
 
