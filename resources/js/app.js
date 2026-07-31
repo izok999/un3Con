@@ -68,6 +68,29 @@ function syncThemeToggle() {
     }
 }
 
+// ── Sidebar en desktop: toggle hamburguesa (persiste en localStorage) ──
+
+function applySidebarHidden(hidden) {
+    document.documentElement.classList.toggle('sidebar-hidden', hidden);
+    localStorage.setItem('une-sidebar-hidden', hidden ? '1' : '0');
+    syncSidebarToggle();
+}
+
+function syncSidebarToggle() {
+    const toggle = document.getElementById('sidebar-toggle');
+
+    if (toggle) {
+        const hidden = document.documentElement.classList.contains('sidebar-hidden');
+        toggle.setAttribute('aria-expanded', hidden ? 'false' : 'true');
+    }
+}
+
+document.addEventListener('click', (e) => {
+    if (e.target.closest('#sidebar-toggle')) {
+        applySidebarHidden(! document.documentElement.classList.contains('sidebar-hidden'));
+    }
+});
+
 let routeTransitionTimeout;
 const routeTransitionClearDelay = 240;
 
@@ -87,6 +110,8 @@ function setRouteTransition(state) {
 
 document.addEventListener('DOMContentLoaded', syncThemeToggle);
 document.addEventListener('livewire:navigated', syncThemeToggle);
+document.addEventListener('DOMContentLoaded', syncSidebarToggle);
+document.addEventListener('livewire:navigated', syncSidebarToggle);
 document.addEventListener('livewire:navigate', () => setRouteTransition('out'));
 document.addEventListener('livewire:navigated', () => {
     setRouteTransition('in');

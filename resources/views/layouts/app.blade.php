@@ -16,6 +16,10 @@
         @vite(['resources/css/app.css', 'resources/js/app.js'])
         <script>
             (() => {
+                if (localStorage.getItem('une-sidebar-hidden') === '1') {
+                    document.documentElement.classList.add('sidebar-hidden');
+                }
+
                 const allowedThemes = ['uneTheme', 'uneThemeDark'];
                 const serializedThemeCookie = document.cookie
                     .split('; ')
@@ -200,6 +204,20 @@
                         link="{{ route('normativas.index') }}"
                         route="normativas.index"
                     />
+                    <x-menu-item
+                        title="Repositorio"
+                        icon="o-archive-box"
+                        link="{{ config('une.links.repositorio') }}"
+                        external
+                    />
+                    @if (config('une.links.revista_cientifica'))
+                        <x-menu-item
+                            title="Revista Científica"
+                            icon="o-newspaper"
+                            link="{{ config('une.links.revista_cientifica') }}"
+                            external
+                        />
+                    @endif
                     <x-menu-item title="Mi Perfil" icon="o-user" link="{{ route('profile') }}" />
                 </x-menu>
             </x-slot:sidebar>
@@ -207,7 +225,16 @@
             <x-slot:content>
                 {{-- Topbar --}}
                 <div id="main-topbar" class="navbar glass-navbar sticky top-0 z-50 mb-4">
-                    <div class="flex-1">
+                    <div class="flex-1 items-center gap-1">
+                        <button
+                            type="button"
+                            id="sidebar-toggle"
+                            class="btn btn-ghost btn-sm btn-square hidden lg:inline-flex"
+                            aria-label="Mostrar u ocultar el menú lateral"
+                            aria-controls="main-drawer"
+                        >
+                            <x-icon name="o-bars-3" class="w-5 h-5" />
+                        </button>
                         <span class="text-lg font-semibold">{{ $header ?? '' }}</span>
                     </div>
                     <div class="flex-none gap-2">
