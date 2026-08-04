@@ -45,11 +45,25 @@ new #[Layout('layouts.app')] class extends Component
 
     public function completeAccount(): void
     {
-        $validated = $this->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:users,email,'.Auth::id()],
-            'password' => ['required', 'string', 'confirmed', Rules\Password::defaults()],
-        ]);
+        $validated = $this->validate(
+            rules: [
+                'name' => ['required', 'string', 'max:255'],
+                'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:users,email,'.Auth::id()],
+                'password' => ['required', 'string', 'confirmed', Rules\Password::defaults()],
+            ],
+            messages: [
+                'name.required' => __('Ingresá tu nombre completo.'),
+                'name.max' => __('El nombre no puede superar los :max caracteres.'),
+                'email.required' => __('El correo es obligatorio: lo necesitamos para verificar que la cuenta es tuya.'),
+                'email.email' => __('Ingresá un correo válido, por ejemplo nombre@dominio.com.'),
+                'email.lowercase' => __('Escribí el correo todo en minúsculas.'),
+                'email.max' => __('El correo no puede superar los :max caracteres.'),
+                'email.unique' => __('Ese correo ya está en uso por otra cuenta. Si es tuyo, ingresá con ese correo o recuperá su contraseña desde el login.'),
+                'password.required' => __('Ingresá una contraseña nueva.'),
+                'password.min' => __('La contraseña es muy corta: necesita al menos :min caracteres.'),
+                'password.confirmed' => __('Las contraseñas no coinciden. Volvé a escribirlas.'),
+            ],
+        );
 
         /** @var User|null $user */
         $user = Auth::user();
@@ -67,9 +81,14 @@ new #[Layout('layouts.app')] class extends Component
             'email_verified_at' => null,
         ])->save();
 
-        Session::flash('status', 'Cuenta completada. Ahora podés vincular Google desde tu perfil sin volver al login.');
+        // Desde este momento el PIN del consultor queda deshabilitado (ver
+        // LegacyAlumnoLoginForm): la cuenta solo se termina de activar cuando
+        // el alumno demuestra que el correo declarado es suyo.
+        $user->sendEmailVerificationNotification();
 
-        $this->redirectIntended(default: $this->defaultRedirect(), navigate: true);
+        Session::flash('status', __('¡Casi listo! Te enviamos un enlace de verificación a tu correo: abrilo para completar el ingreso. Desde ahora entrás solo con tu nueva contraseña; el PIN del consultor anterior quedó deshabilitado.'));
+
+        $this->redirectRoute('verification.notice', navigate: true);
     }
 
     protected function requiresCompletion(User $user): bool
@@ -92,48 +111,65 @@ new #[Layout('layouts.app')] class extends Component
     <x-mary-card shadow class="border border-base-300">
         <form wire:submit="completeAccount" class="space-y-5">
             <div class="grid gap-4 md:grid-cols-2">
-                <div class="form-control w-full md:col-span-2">
-                    <label class="label" for="name">
-                        <span class="label-text font-medium">Nombre completo</span>
-                    </label>
-                    <input wire:model="name" id="name" type="text" class="input input-bordered w-full" required autocomplete="name" />
-                    <x-input-error :messages="$errors->get('name')" class="mt-2" />
+                <div class="md:col-span-2">
+                    <x-mary-input
+                        wire:model="name"
+                        id="name"
+                        label="Nombre completo"
+                        icon="o-user"
+                        required
+                        autocomplete="name"
+                        first-error-only
+                    />
                 </div>
 
-                <div class="form-control w-full">
-                    <label class="label" for="documento">
-                        <span class="label-text font-medium">Documento (Cédula)</span>
-                    </label>
-                    <input id="documento" type="text" class="input input-bordered w-full" value="{{ $documento }}" disabled readonly />
-                </div>
+                <x-mary-input
+                    id="documento"
+                    label="Documento (Cédula)"
+                    icon="o-identification"
+                    value="{{ $documento }}"
+                    disabled
+                    readonly
+                    omit-error
+                />
 
-                <div class="form-control w-full">
-                    <label class="label" for="email">
-                        <span class="label-text font-medium">Correo real</span>
-                    </label>
-                    <input wire:model="email" id="email" type="email" class="input input-bordered w-full" required autocomplete="username" placeholder="tu@email.com" />
-                    <x-input-error :messages="$errors->get('email')" class="mt-2" />
-                </div>
+                <x-mary-input
+                    wire:model="email"
+                    id="email"
+                    type="email"
+                    label="Correo real"
+                    icon="o-envelope"
+                    placeholder="tu@email.com"
+                    hint="A este correo te va a llegar el enlace de verificación."
+                    required
+                    autocomplete="username"
+                    first-error-only
+                />
 
-                <div class="form-control w-full">
-                    <label class="label" for="password">
-                        <span class="label-text font-medium">Nueva contraseña local</span>
-                    </label>
-                    <input wire:model="password" id="password" type="password" class="input input-bordered w-full" required autocomplete="new-password" />
-                    <x-input-error :messages="$errors->get('password')" class="mt-2" />
-                </div>
+                <x-mary-password
+                    wire:model="password"
+                    id="password"
+                    label="Nueva contraseña local"
+                    hint="Mínimo 8 caracteres."
+                    right
+                    required
+                    autocomplete="new-password"
+                    first-error-only
+                />
 
-                <div class="form-control w-full">
-                    <label class="label" for="password_confirmation">
-                        <span class="label-text font-medium">Confirmar contraseña</span>
-                    </label>
-                    <input wire:model="password_confirmation" id="password_confirmation" type="password" class="input input-bordered w-full" required autocomplete="new-password" />
-                    <x-input-error :messages="$errors->get('password_confirmation')" class="mt-2" />
-                </div>
+                <x-mary-password
+                    wire:model="password_confirmation"
+                    id="password_confirmation"
+                    label="Confirmar contraseña"
+                    right
+                    required
+                    autocomplete="new-password"
+                    first-error-only
+                />
             </div>
 
             <div class="rounded-box border border-base-300 bg-base-200/40 p-4 text-sm text-base-content/80">
-                Después de este paso vas a poder entrar con tu correo o tu documento y esta nueva contraseña. Al guardar, te llevamos a tu perfil para que puedas vincular Google a la misma cuenta.
+                Después de este paso vas a entrar con tu correo o tu documento y esta nueva contraseña: el PIN del consultor anterior queda deshabilitado. Te vamos a enviar un enlace a tu correo para verificar que es tuyo y así proteger tu cuenta.
             </div>
 
             <button type="submit" class="btn btn-primary w-full md:w-auto">

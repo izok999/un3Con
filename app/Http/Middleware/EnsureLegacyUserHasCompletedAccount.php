@@ -4,7 +4,6 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 
 class EnsureLegacyUserHasCompletedAccount
@@ -21,17 +20,12 @@ class EnsureLegacyUserHasCompletedAccount
         if (
             $user
             && filled($user->documento)
-            && $this->usesLegacyPlaceholderEmail($user->email)
+            && $user->usesLegacyPlaceholderEmail()
             && ! $request->routeIs('auth.legacy.complete-account')
         ) {
             return redirect()->route('auth.legacy.complete-account');
         }
 
         return $next($request);
-    }
-
-    protected function usesLegacyPlaceholderEmail(string $email): bool
-    {
-        return Str::endsWith(Str::lower($email), '@consultor.invalid');
     }
 }

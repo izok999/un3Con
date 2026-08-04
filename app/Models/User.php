@@ -2,9 +2,9 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\RoleName;
 use Database\Factories\UserFactory;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use Spatie\Permission\Traits\HasRoles;
 
 #[Fillable([
@@ -26,10 +27,20 @@ use Spatie\Permission\Traits\HasRoles;
     'locale',
 ])]
 #[Hidden(['password', 'remember_token'])]
-class User extends Authenticatable
+class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, HasRoles, Notifiable;
+
+    /**
+     * El correo alumno-XXX@consultor.invalid marca una cuenta creada desde el
+     * login legacy que todavía no completó su activación (correo y contraseña
+     * propios). Mientras lo conserve, el PIN del consultor sigue habilitado.
+     */
+    public function usesLegacyPlaceholderEmail(): bool
+    {
+        return Str::endsWith(Str::lower((string) $this->email), '@consultor.invalid');
+    }
 
     public function academicUnitScopes(): HasMany
     {

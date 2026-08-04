@@ -18,10 +18,19 @@ new class extends Component
     public function updatePassword(): void
     {
         try {
-            $validated = $this->validate([
-                'current_password' => ['required', 'string', 'current_password'],
-                'password' => ['required', 'string', Password::defaults(), 'confirmed'],
-            ]);
+            $validated = $this->validate(
+                rules: [
+                    'current_password' => ['required', 'string', 'current_password'],
+                    'password' => ['required', 'string', Password::defaults(), 'confirmed'],
+                ],
+                messages: [
+                    'current_password.required' => __('Ingresá tu contraseña actual.'),
+                    'current_password.current_password' => __('La contraseña actual no es correcta.'),
+                    'password.required' => __('Ingresá una contraseña nueva.'),
+                    'password.min' => __('La contraseña es muy corta: necesita al menos :min caracteres.'),
+                    'password.confirmed' => __('Las contraseñas no coinciden. Volvé a escribirlas.'),
+                ],
+            );
         } catch (ValidationException $e) {
             $this->reset('current_password', 'password', 'password_confirmation');
 

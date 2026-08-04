@@ -4,8 +4,10 @@ namespace Tests\Feature\Auth;
 
 use App\Models\User;
 use App\Services\AlumnoExternoService;
+use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Livewire\Volt\Volt;
 use Mockery;
 use Spatie\Permission\Models\Role;
@@ -120,27 +122,16 @@ class AuthenticationTest extends TestCase
         $this->assertAuthenticatedAs($user);
     }
 
-    public function test_legacy_login_redirects_completed_accounts_to_dashboard(): void
+    public function test_legacy_pin_is_rejected_once_the_account_is_activated(): void
     {
-        $existingUser = User::factory()->create([
+        User::factory()->create([
             'documento' => '1234567',
             'email' => 'alumno@example.com',
         ]);
 
-        $alumno = new stdClass;
-        $alumno->per_nombre = 'Juan';
-        $alumno->per_apelli = 'Perez';
-        $alumno->alu_perdoc = '1234567';
-
         $service = Mockery::mock(AlumnoExternoService::class);
-        $service->shouldReceive('autenticarConsultor')
-            ->once()
-            ->with('1234567', '4321', '127.0.0.1')
-            ->andReturn(['logged' => true]);
-        $service->shouldReceive('resolverAlumno')
-            ->once()
-            ->with('1234567')
-            ->andReturn($alumno);
+        $service->shouldNotReceive('autenticarConsultor');
+        $service->shouldNotReceive('resolverAlumno');
 
         $this->app->instance(AlumnoExternoService::class, $service);
 
@@ -151,10 +142,36 @@ class AuthenticationTest extends TestCase
         $component->call('login');
 
         $component
+            ->assertHasErrors(['form.email'])
+            ->assertNoRedirect();
+
+        $this->assertGuest();
+    }
+
+    public function test_activated_accounts_authenticate_with_their_new_password(): void
+    {
+        $user = User::factory()->create([
+            'documento' => '1234567',
+            'email' => 'alumno@example.com',
+            'password' => Hash::make('nueva-contrasena'),
+        ]);
+
+        $service = Mockery::mock(AlumnoExternoService::class);
+        $service->shouldNotReceive('autenticarConsultor');
+
+        $this->app->instance(AlumnoExternoService::class, $service);
+
+        $component = Volt::test('pages.auth.login')
+            ->set('form.email', '1234567')
+            ->set('form.password', 'nueva-contrasena');
+
+        $component->call('login');
+
+        $component
             ->assertHasNoErrors()
             ->assertRedirect(route('dashboard', absolute: false));
 
-        $this->assertAuthenticatedAs($existingUser->fresh());
+        $this->assertAuthenticatedAs($user);
     }
 
     public function test_alumnos_can_not_authenticate_using_invalid_legacy_credentials(): void
@@ -183,6 +200,7 @@ class AuthenticationTest extends TestCase
 
     public function test_incomplete_legacy_accounts_are_redirected_to_complete_account_screen(): void
     {
+        /** @var User $user */
         $user = User::factory()->create([
             'documento' => '7654321',
             'email' => 'alumno-7654321@consultor.invalid',
@@ -196,8 +214,11 @@ class AuthenticationTest extends TestCase
 
     public function test_legacy_users_can_complete_their_account_after_login(): void
     {
+        Notification::fake();
+
         Role::findOrCreate('ALUMNO', 'web');
 
+        /** @var User $user */
         $user = User::factory()->create([
             'name' => 'Alumno Legacy',
             'documento' => '7654321',
@@ -218,7 +239,7 @@ class AuthenticationTest extends TestCase
 
         $component
             ->assertHasNoErrors()
-            ->assertRedirect(route('profile', absolute: false));
+            ->assertRedirect(route('verification.notice', absolute: false));
 
         $user->refresh();
 
@@ -226,6 +247,38 @@ class AuthenticationTest extends TestCase
         $this->assertSame('alumno.completo@example.com', $user->email);
         $this->assertTrue(Hash::check('password', $user->password));
         $this->assertNull($user->email_verified_at);
+
+        Notification::assertSentTo($user, VerifyEmail::class);
+    }
+
+    public function test_completing_the_account_rejects_short_passwords_with_a_custom_message(): void
+    {
+        /** @var User $user */
+        $user = User::factory()->create([
+            'documento' => '7654321',
+            'email' => 'alumno-7654321@consultor.invalid',
+        ]);
+
+        $this->actingAs($user);
+
+        $component = Volt::test('pages.auth.complete-legacy-account')
+            ->set('name', 'Alumno Completo')
+            ->set('email', 'alumno.completo@example.com')
+            ->set('password', 'corta')
+            ->set('password_confirmation', 'corta');
+
+        $component->call('completeAccount');
+
+        $expectedMessage = str_replace(':min', '8', __('La contraseña es muy corta: necesita al menos :min caracteres.'));
+
+        $component
+            ->assertHasErrors(['password'])
+            ->assertSee($expectedMessage);
+
+        $this->assertSame(
+            $expectedMessage,
+            collect($component->errors()->get('password'))->first(),
+        );
     }
 
     public function test_navigation_menu_can_be_rendered(): void

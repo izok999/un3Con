@@ -36,23 +36,29 @@ new #[Layout('layouts.guest')] class extends Component
 }; ?>
 
 <div>
-    <div class="mb-4 text-sm text-gray-600">
-        {{ __('Thanks for signing up! Before getting started, could you verify your email address by clicking on the link we just emailed to you? If you didn\'t receive the email, we will gladly send you another.') }}
+    <x-auth-session-status class="mb-4" :status="session('status') !== 'verification-link-sent' ? session('status') : null" />
+
+    <div class="mb-4 text-sm text-base-content/80">
+        {{ __('Para proteger tu cuenta necesitamos confirmar que el correo es tuyo. Te enviamos un enlace de verificación: abrilo para completar el ingreso. Si no te llegó, revisá el spam o pedí que te lo reenviemos.') }}
+    </div>
+
+    <div class="mb-4 text-sm text-base-content/80">
+        {{ __('Verificando tu correo evitamos que otra persona pueda quedarse con tu cuenta.') }}
     </div>
 
     @if (session('status') == 'verification-link-sent')
         <div class="mb-4 font-medium text-sm text-green-600">
-            {{ __('A new verification link has been sent to the email address you provided during registration.') }}
+            {{ __('Te reenviamos el enlace de verificación al correo de tu cuenta.') }}
         </div>
     @endif
 
     <div class="mt-4 flex items-center justify-between">
         <x-primary-button wire:click="sendVerification">
-            {{ __('Resend Verification Email') }}
+            {{ __('Reenviar correo de verificación') }}
         </x-primary-button>
 
-        <button wire:click="logout" type="submit" class="underline text-sm text-gray-600 hover:text-gray-900 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-            {{ __('Log Out') }}
+        <button wire:click="logout" type="submit" class="underline text-sm text-base-content/60 hover:text-base-content rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
+            {{ __('Cerrar sesión') }}
         </button>
     </div>
 </div>

@@ -37,6 +37,19 @@ class LegacyAlumnoLoginForm extends Form
 
         $documento = $this->normalizedDocumento();
 
+        // El PIN del consultor solo sirve para el primer ingreso: una vez que el
+        // alumno definió su correo y contraseña propios, dejar el PIN activo
+        // permitiría secuestrar la cuenta a cualquiera que lo conozca.
+        $existingUser = User::query()->firstWhere('documento', $documento);
+
+        if ($existingUser && ! $existingUser->usesLegacyPlaceholderEmail()) {
+            RateLimiter::hit($this->throttleKey());
+
+            throw ValidationException::withMessages([
+                'legacyForm.documento' => __('Tu cuenta ya está activada, así que el PIN del consultor anterior quedó deshabilitado. Ingresá con tu nueva contraseña o usá "¿Olvidaste tu contraseña?" para recuperarla.'),
+            ]);
+        }
+
         try {
             $legacyUser = $service->autenticarConsultor($documento, trim($this->pin), request()->ip());
         } catch (Throwable $exception) {

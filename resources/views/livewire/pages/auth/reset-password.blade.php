@@ -34,11 +34,19 @@ new #[Layout('layouts.guest')] class extends Component
      */
     public function resetPassword(): void
     {
-        $this->validate([
-            'token' => ['required'],
-            'email' => ['required', 'string', 'max:255'],
-            'password' => ['required', 'string', 'confirmed', Rules\Password::defaults()],
-        ]);
+        $this->validate(
+            rules: [
+                'token' => ['required'],
+                'email' => ['required', 'string', 'max:255'],
+                'password' => ['required', 'string', 'confirmed', Rules\Password::defaults()],
+            ],
+            messages: [
+                'email.required' => __('Ingresá tu correo o tu documento.'),
+                'password.required' => __('Ingresá una contraseña nueva.'),
+                'password.min' => __('La contraseña es muy corta: necesita al menos :min caracteres.'),
+                'password.confirmed' => __('Las contraseñas no coinciden. Volvé a escribirlas.'),
+            ],
+        );
 
         $email = $this->resolveResetEmail();
 

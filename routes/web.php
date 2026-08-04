@@ -53,8 +53,11 @@ Route::get('/normativas', fn () => view('pages.normativas.index', [
     ->middleware(['auth', 'legacy.account.complete', 'oauth.documento'])
     ->name('normativas.index');
 
-// Portal del alumno — solo rol ALUMNO
-Route::middleware(['auth', 'legacy.account.complete', 'oauth.documento', 'role:'.RoleName::Alumno->value])->group(function () {
+// Portal del alumno — solo rol ALUMNO. Exige correo verificado: los datos
+// académicos son el objetivo de un secuestro de cuenta, y el perfil queda
+// fuera del requisito para poder corregir un correo mal cargado y reenviar
+// la verificación.
+Route::middleware(['auth', 'legacy.account.complete', 'verified', 'oauth.documento', 'role:'.RoleName::Alumno->value])->group(function () {
     Volt::route('/mis-carreras', 'alumno.mis-carreras')->name('alumno.carreras');
     Volt::route('/mis-carreras/{halId}', 'alumno.detalle-carrera')->name('alumno.carreras.show');
     Volt::route('/mis-materias', 'alumno.mis-materias')->name('alumno.materias');

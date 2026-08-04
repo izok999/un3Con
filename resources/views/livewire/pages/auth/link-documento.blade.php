@@ -133,6 +133,16 @@ new #[Layout('layouts.app')] class extends Component
 
     protected function mergeIntoExistingStudent(User $existingStudent, User $oauthUser, string $documento, object $alumno): User
     {
+        // Una cuenta ya activada (correo y contraseña propios) no puede
+        // absorberse solo con el PIN legacy: cualquiera que lo conociera podría
+        // colgarle su Google y quedarse con la cuenta. El camino legítimo es
+        // entrar con la contraseña y vincular Google desde el perfil.
+        if (! $this->usesLegacyPlaceholderEmail($existingStudent->email)) {
+            throw ValidationException::withMessages([
+                'documento' => 'Esa cédula ya tiene una cuenta activada. Ingresá con tu documento o correo y tu contraseña, y vinculá Google desde tu perfil.',
+            ]);
+        }
+
         if (filled($existingStudent->auth_provider) && (
             $existingStudent->auth_provider !== $oauthUser->auth_provider
             || $existingStudent->auth_provider_id !== $oauthUser->auth_provider_id
