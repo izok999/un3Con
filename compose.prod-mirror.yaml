@@ -1,0 +1,286 @@
+# =============================================================================
+# compose.prod-mirror.yaml — espejo del servidor de produccion
+#
+# NO reemplaza a compose.yaml (Sail, entorno de desarrollo). Es un stack aparte
+# cuyo unico objetivo es que los numeros de una prueba de carga sean
+# transferibles al server real.
+#
+# Topologia (igual que migrate/):
+#     Nginx :80 → Octane/FrankenPHP :8000 → PgBouncer :6432 → PostgreSQL :5432
+#                                         → Redis :6379
+#                                         → legacy 10.10.254.252:5432 (DIRECTO)
+#     Horizon + Scheduler bajo Supervisor
+#
+# Uso:
+#     cp .env.prod-mirror.example .env.prod-mirror   # y completalo
+#     docker compose -f compose.prod-mirror.yaml --env-file .env.prod-mirror up -d --build
+#
+# La app queda en http://localhost:8080 — mandá siempre el header
+# Host: www.une.edu.py, porque el trustHosts de bootstrap/app.php rechaza
+# cualquier otro.
+# =============================================================================
+
+name: consultor-prod-mirror
+
+x-app-image: &app-image
+  build:
+    context: .
+    dockerfile: docker/prod/Dockerfile
+    args:
+      PHP_VERSION: "8.4"   # produccion usa 8.4 (Sail usa 8.5 — no los mezcles)
+      NODE_VERSION: "22"
+  image: consultor/prod-mirror:latest
+
+x-app-env: &app-env
+  APP_DIR: /var/www/consultor
+  DB_HOST: pgbouncer
+  DB_PORT: 6432
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+
+services:
+  # ---------------------------------------------------------------------------
+  # netns — container "holder" del network namespace que comparten Nginx, Octane
+  # y el generador de carga. Es el patron de pod de Kubernetes.
+  #
+  # Por que no `network_mode: service:app` directo: Docker resuelve ese destino
+  # UNA sola vez, al crear el container. Cuando `app` se reinicia (y con
+  # restart: unless-stopped se reinicia), obtiene un namespace nuevo y Nginx
+  # queda huerfano en el viejo: el proceso sigue "Up" pero escuchando en una red
+  # muerta. El holder no se reinicia nunca, asi que el namespace es estable.
+  #
+  # El beneficio se mantiene: el `upstream octane { server 127.0.0.1:8000; }` de
+  # consultor.conf funciona literal, igual que en el server real donde Nginx y
+  # Octane conviven en el mismo loopback. Todos los puertos se publican aca.
+  # ---------------------------------------------------------------------------
+  netns:
+    image: alpine:3.20
+    command: ["sleep", "infinity"]
+    init: true
+    ports:
+      - "${MIRROR_HTTP_PORT:-8080}:80"     # Nginx
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Nginx — monta migrate/consultor.conf sin editarlo.
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:1.27-alpine
+    network_mode: "service:netns"
+    depends_on:
+      app:
+        condition: service_started
+    volumes:
+      - ./migrate/consultor.conf:/etc/nginx/consultor.conf.src:ro
+      - ./docker/prod/nginx-entrypoint.sh:/usr/local/bin/nginx-entrypoint:ro
+      - app-public:/var/www/consultor/public:ro
+    environment:
+      # false = reproduce produccion tal cual (rate limiting roto por el tunnel).
+      # true  = aplica el fix y limita por X-Forwarded-For.
+      MIRROR_FIX_REAL_IP: "${MIRROR_FIX_REAL_IP:-false}"
+    entrypoint: ["/bin/sh", "/usr/local/bin/nginx-entrypoint"]
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Octane / FrankenPHP — equivale a consultor-octane.service
+  # ---------------------------------------------------------------------------
+  app:
+    <<: *app-image
+    command: ["app"]
+    env_file:
+      - .env.prod-mirror
+    environment:
+      <<: *app-env
+      MIRROR_PUBLIC_EXPORT: /srv/public
+      MIRROR_RUN_MIGRATIONS: "${MIRROR_RUN_MIGRATIONS:-true}"
+      OCTANE_WORKERS: "${OCTANE_WORKERS:-auto}"
+      OCTANE_TASK_WORKERS: "${OCTANE_TASK_WORKERS:-auto}"
+      OCTANE_MAX_REQUESTS: "${OCTANE_MAX_REQUESTS:-500}"
+    network_mode: "service:netns"
+    volumes:
+      - app-public:/srv/public
+      - app-storage:/var/www/consultor/storage/logs
+
+    # -------------------------------------------------------------------------
+    # RECURSOS — ajustar a los del server real ANTES de medir nada.
+    #
+    # Se usa cpuset (pin de cores fisicos) y no `cpus:`, porque `cpus:` es una
+    # cuota CFS que no cambia lo que reporta nproc: con --workers=auto Octane
+    # levantaria un worker por core del HOST y despues se pelearian por la
+    # cuota. cpuset si cambia los cores visibles.
+    #
+    # Aun asi, lo mas seguro es fijar OCTANE_WORKERS al numero que da produccion.
+    # -------------------------------------------------------------------------
+    cpuset: "${MIRROR_APP_CPUSET:-0-3}"
+    mem_limit: "${MIRROR_APP_MEM:-4g}"
+
+    depends_on:
+      netns:
+        condition: service_started
+      pgbouncer:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # /up es el health endpoint que registra bootstrap/app.php
+      test: ["CMD", "curl", "-fsS", "-H", "Host: www.une.edu.py", "http://127.0.0.1:8000/up"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Horizon + Scheduler — monta migrate/consultor-horizon.conf sin editarlo.
+  # La imagen tiene un symlink php8.4 -> php justamente para eso.
+  # ---------------------------------------------------------------------------
+  worker:
+    <<: *app-image
+    command: ["worker"]
+    env_file:
+      - .env.prod-mirror
+    environment:
+      <<: *app-env
+      MIRROR_RUN_MIGRATIONS: "false"
+    volumes:
+      - ./migrate/consultor-horizon.conf:/etc/supervisor/conf.d/consultor-horizon.conf:ro
+      - app-storage:/var/www/consultor/storage/logs
+    cpuset: "${MIRROR_WORKER_CPUSET:-4-5}"
+    mem_limit: "${MIRROR_WORKER_MEM:-2g}"
+    # Sin esto hereda el healthcheck de dunglas/frankenphp
+    # (curl localhost:2019/metrics, la admin API de Caddy), que en el worker
+    # falla siempre porque aca no corre FrankenPHP sino Supervisor. El estado
+    # correcto es que los dos programas del grupo consultor esten RUNNING.
+    healthcheck:
+      test: ["CMD-SHELL", "test -z \"$$(supervisorctl status consultor:* | grep -v RUNNING)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # PgBouncer — monta migrate/pgbouncer.ini; solo se le tocan host y listen_addr
+  # (ver docker/prod/pgbouncer-entrypoint.sh, que imprime cada delta al arrancar)
+  # ---------------------------------------------------------------------------
+  pgbouncer:
+    build:
+      context: .
+      dockerfile: docker/prod/pgbouncer.Dockerfile
+    image: consultor/prod-mirror-pgbouncer:latest
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      DB_DATABASE: "${DB_DATABASE:-consultor_db}"
+      DB_USERNAME: "${DB_USERNAME:?falta DB_USERNAME}"
+      DB_PASSWORD: "${DB_PASSWORD:?falta DB_PASSWORD}"
+      MIRROR_PGBOUNCER_VERBOSE: "${MIRROR_PGBOUNCER_VERBOSE:-}"
+    volumes:
+      - ./migrate/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini.src:ro
+    # Con max_client_conn=1000, PgBouncer necesita ~1062 descriptores y avisa al
+    # arrancar: "kernel file descriptor limit: 1024 ... max expected fd use: 1062".
+    # Con el default se queda sin fds antes de llegar al limite configurado.
+    # VERIFICAR EN EL SERVER: el .ini no puede arreglar esto, hace falta
+    # LimitNOFILE en la unit de systemd de pgbouncer.
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 4096
+    ports:
+      - "${MIRROR_PGBOUNCER_PORT:-6432}:6432"   # para `psql -p 6432 pgbouncer` (SHOW POOLS)
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL local
+  #
+  # VERIFICAR: setup-server.sh no instala PostgreSQL (solo PgBouncer), asi que
+  # la version del server real no esta documentada en el repo. Corré
+  # `SELECT version();` en produccion y fijá POSTGRES_VERSION en consecuencia —
+  # una diferencia de major cambia planes de query.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: "postgres:${POSTGRES_VERSION:-18}-alpine"
+    environment:
+      POSTGRES_DB: "${DB_DATABASE:-consultor_db}"
+      POSTGRES_USER: "${DB_USERNAME:?falta DB_USERNAME}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?falta DB_PASSWORD}"
+    command:
+      - postgres
+      # max_connections tiene que cubrir default_pool_size (25) + reserve (5) de
+      # PgBouncer, mas lo que abra Horizon. El default de 100 alcanza, pero es el
+      # numero a mirar si aparecen errores de conexion bajo carga.
+      - "-c"
+      - "max_connections=${POSTGRES_MAX_CONNECTIONS:-100}"
+      - "-c"
+      - "shared_buffers=${POSTGRES_SHARED_BUFFERS:-256MB}"
+      - "-c"
+      - "log_min_duration_statement=${POSTGRES_LOG_MIN_DURATION:-500}"
+    volumes:
+      - mirror-pgsql:/var/lib/postgresql/data
+    ports:
+      - "${MIRROR_PG_PORT:-55432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -d ${DB_DATABASE:-consultor_db} -U ${DB_USERNAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Redis — mismos limites que aplica setup-server.sh via sed sobre redis.conf
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    command:
+      - redis-server
+      - "--maxmemory"
+      - "512mb"
+      - "--maxmemory-policy"
+      - "volatile-lru"
+      - "--appendonly"
+      - "no"
+    volumes:
+      - mirror-redis:/data
+    ports:
+      - "${MIRROR_REDIS_PORT:-56379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Generador de carga (perfil `loadtest` — no arranca con `up` normal)
+  #
+  #   docker compose -f compose.prod-mirror.yaml --env-file .env.prod-mirror \
+  #     --profile loadtest run --rm k6 run /scripts/load.js
+  # ---------------------------------------------------------------------------
+  k6:
+    image: grafana/k6:latest
+    profiles: ["loadtest"]
+    network_mode: "service:netns"
+    volumes:
+      - ./docker/prod/loadtest:/scripts:ro
+    environment:
+      TARGET: "${LOAD_TARGET:-http://127.0.0.1:80}"
+      VHOST: "${LOAD_VHOST:-www.une.edu.py}"
+      LOAD_RPS: "${LOAD_RPS:-5}"
+      LOAD_DURATION: "${LOAD_DURATION:-2m}"
+      LOAD_MAX_VUS: "${LOAD_MAX_VUS:-20}"
+      LOAD_STAGE: "${LOAD_STAGE:-smoke}"
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  mirror-pgsql:
+  mirror-redis:
+  app-public:
+  app-storage:
